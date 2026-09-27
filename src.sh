@@ -11,6 +11,9 @@ INNOEXTRACT_BINARY_B64=0
 
 INSTALLER_VERSION="DEV"
 REPO_PATH="https://github.com/DarthSidiousPT/zoom-platform-darth.sh"
+# Sent on every request this script makes (Lutris, OWC, and this repo's own raw files),
+# so those servers' logs show this fork and version, not the official script.
+HTTP_USER_AGENT="zoom-platform-darth.sh/$INSTALLER_VERSION (+$REPO_PATH)"
 # Optional per-game fixes, read while installing: game-fixes/<ZOOM game GUID>.ini in this
 # repository (see game-fixes/README.md). Kept in files of their own so a game's quirk
 # doesn't need a change to this script, and only the installed game's file is downloaded.
@@ -187,7 +190,7 @@ trim_string() {
 # Download the umu-launcher zipapp
 download_umu_zipapp() {
     _url="$1"
-    _url_resp=$(curl -o "$CACHE_DIR"/umu-launcher.tar.xz "$_url" -Ls -H "User-Agent: zoom-platform.sh/$INSTALLER_VERSION (+https://zoom-platform.sh/)")
+    _url_resp=$(curl -o "$CACHE_DIR"/umu-launcher.tar.xz "$_url" -Ls -H "User-Agent: $HTTP_USER_AGENT")
     _url_exit=$?
     if [ $_url_exit -ne 0 ]; then
         fatal_error "Could not download umu-launcher. Please install it manually."
@@ -205,7 +208,7 @@ download_umu_zipapp() {
 
 # Get umu-launcher's url from lutris' runtime api
 get_umu_url() {
-    _api_resp=$(curl -Ls -H "User-Agent: zoom-platform.sh/$INSTALLER_VERSION (+https://zoom-platform.sh/)" \
+    _api_resp=$(curl -Ls -H "User-Agent: $HTTP_USER_AGENT" \
                     'https://lutris.net/api/runtimes?format=json')
     _api_exit=$?
     if [ $_api_exit -eq 0 ]; then
@@ -226,7 +229,7 @@ get_umu_url() {
 
 get_umu_id() {
     _guid="$1"
-    _api_resp=$(curl -Ls -H "User-Agent: zoom-platform.sh/$INSTALLER_VERSION (+https://zoom-platform.sh/)" \
+    _api_resp=$(curl -Ls -H "User-Agent: $HTTP_USER_AGENT" \
                     "https://umu.openwinecomponents.org/umu_api.php?store=zoomplatform&codename=$_guid")
     _api_exit=$?
     if [ $_api_exit -eq 0 ]; then
@@ -1062,7 +1065,7 @@ load_game_fixes() {
         # No -f, so the status code can tell "no file for this game", which is what
         # nearly every game gets (a 404), from a real failure like being offline
         _gf_code=$(curl -Ls --max-time 15 -o "$_gf_file" -w '%{http_code}' \
-            -H "User-Agent: zoom-platform.sh/$INSTALLER_VERSION (+https://zoom-platform.sh/)" "$_gf_url")
+            -H "User-Agent: $HTTP_USER_AGENT" "$_gf_url")
         _gf_exit=$?
         case "$_gf_exit:$_gf_code" in
             0:200)
