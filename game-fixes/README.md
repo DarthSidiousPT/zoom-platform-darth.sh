@@ -2,6 +2,9 @@
 
 Launchers for games whose own ZOOM Platform shortcut doesn't work under Proton.
 
+This is the technical/contributor doc. For a plain list of which games have a fix and what it does, see
+[GAMES.md](GAMES.md).
+
 While installing, `zoom-platform.sh` downloads `game-fixes/<ZOOM game GUID>.ini` from the `main` branch of this
 repository, for the game being installed only. Most games have no file, and that is fine: a 404, or no network,
 just means the install goes on as usual. Everything it does with the file is logged. To try a file that isn't on
