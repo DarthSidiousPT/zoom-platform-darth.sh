@@ -8,8 +8,8 @@
 > fork of doZennn's ZOOM-patched fork), and stays current instead of waiting on upstream's
 > release cadence.
 >
-> This is an independent, unofficial fork - it is not endorsed by, affiliated with, or
-> supported by ZOOM Platform. Install with:
+> This is an independent fork - it is not endorsed by, affiliated with, or supported by
+> ZOOM Platform. Install with:
 > ```
 > curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh
 > ```

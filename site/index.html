@@ -118,36 +118,11 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 3.5rem 1.25rem 0;
+      padding: 5.5rem 1.25rem 0;
       overflow: hidden;
       background:
         radial-gradient(ellipse 70% 45% at 50% 62%, rgba(177, 75, 255, 0.35), transparent 70%),
         linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5em;
-      font-family: var(--font-body);
-      font-size: 0.8rem;
-      font-weight: 500;
-      color: var(--ink-dim);
-      border: 1px solid var(--glass-border);
-      background: var(--glass-bg);
-      backdrop-filter: blur(8px);
-      padding: 0.4em 0.9em;
-      border-radius: 999px;
-      letter-spacing: 0.02em;
-    }
-
-    .badge .dot {
-      width: 0.45em;
-      height: 0.45em;
-      border-radius: 50%;
-      background: var(--cyan);
-      box-shadow: 0 0 6px var(--cyan);
-      flex: none;
     }
 
     .wordmark {
@@ -522,7 +497,6 @@
 
 <body>
   <div class="hero">
-    <span class="badge"><span class="dot"></span>unofficial fork of ZOOM Platform's installer</span>
     <h1 class="wordmark">zoom-platform-darth.sh</h1>
     <p class="tagline">Installs ZOOM Platform's Windows games on Linux, with fixes that haven't reached the official
       script yet.</p>
@@ -659,8 +633,8 @@
   </main>
 
   <footer>
-    <p class="disclaimer">zoom-platform-darth.sh is an independent, unofficial fork of ZOOM Platform's installer
-      script. It is not endorsed by, affiliated with, or supported by ZOOM Platform.</p>
+    <p class="disclaimer">zoom-platform-darth.sh is an independent fork of ZOOM Platform's installer script. It is
+      not endorsed by, affiliated with, or supported by ZOOM Platform.</p>
     <div class="links">
       <a href="https://github.com/DarthSidiousPT/zoom-platform-darth.sh">Source (BSD-3)</a>
       <a href="https://github.com/DarthSidiousPT/zoom-platform-darth.sh/discussions">Discussions</a>
