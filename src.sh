@@ -1256,7 +1256,7 @@ Source & issues: %s
 INPUT_INSTALLER=""
 INSTALL_PATH=""
 
-options=$(getopt -o hvi:d:o: --long help,version,installer:,dest:,output: -n 'zoom-platform.sh' -- "$@")
+options=$(getopt -o hvi:d:o: --long help,version,installer:,dest:,output: -n 'zoom-platform-darth.sh' -- "$@")
 
 eval set -- "$options"
 
