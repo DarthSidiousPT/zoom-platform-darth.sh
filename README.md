@@ -1,4 +1,4 @@
-# [zoom-platform.sh](https://zoom-platform.sh/)
+# [zoom-platform-darth.sh](https://darthsidiouspt.github.io/zoom-platform-darth.sh/)
 
 > **This is [DarthSidiousPT](https://github.com/DarthSidiousPT)'s fork of
 > [ZOOM-Platform/zoom-platform.sh](https://github.com/ZOOM-Platform/zoom-platform.sh)**,
@@ -9,7 +9,10 @@
 > release cadence.
 >
 > This is an independent, unofficial fork - it is not endorsed by, affiliated with, or
-> supported by ZOOM Platform.
+> supported by ZOOM Platform. Install with:
+> ```
+> curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh
+> ```
 
 ## What's different from the official script:
 
@@ -39,20 +42,17 @@ A tool to streamline installation, updating, and playing Windows games from [ZOO
 
 ## Website
 
-The website is just a static `index.html` in [www/public](www/public).  
-A small web server is used so users can get the script at the latest commit or a specific hash.
-See the [README](www/README.md) here.
+The fork's own site is a static `index.html` in [site](site), deployed to GitHub Pages by
+`.github/workflows/darth-build.yml` on every push to `main`. It always serves the latest
+*release* asset, never an unreleased `main` build.
 
 ## Usage
 
-For the script help, see `-h`.  
-For the website:
-| URL (either http or https works) | |
-| - | - |
-| `curl zoom-platform.sh` | Returns the latest stable version of the script. |
-| `curl zoom-platform.sh/latest` | Returns the script built from the latest commit. |
-| `curl zoom-platform.sh/b8dbaf9` | Returns the script built from a specific commit. |
-| `curl zoom-platform.sh/b8dbaf9cde1f98c09d7da6874c3931014275fd4b` | Same as above but using the full hash. |
+For the script help, see `-h`.
+
+```
+curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh
+```
 
 ### Games split into several files
 

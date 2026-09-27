@@ -85,3 +85,46 @@ jobs:
           bodyFile: release_body.md
           allowUpdates: false
           makeLatest: true
+
+  # Deploys the fork's own website (site/) to GitHub Pages, after every push to main
+  # (not only a push that bumps VERSION). It always serves the latest *release* asset,
+  # never an unreleased main build, so a broken script on main never goes live: the
+  # download step fails the job before anything is deployed. Needs Settings > Pages >
+  # Source = "GitHub Actions" set once, by hand, before the first run.
+  pages:
+    if: github.repository == 'DarthSidiousPT/zoom-platform-darth.sh'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Fetch the latest release asset as the page's downloadable script
+        run: |
+          curl -fsSL -o site/i \
+            https://github.com/DarthSidiousPT/zoom-platform-darth.sh/releases/latest/download/zoom-platform-darth.sh
+
+      - name: Stamp the page with that release's version
+        run: |
+          version=$(grep -m1 '^INSTALLER_VERSION=' site/i | sed -E 's/INSTALLER_VERSION="(.*)"/\1/')
+          if [ -z "$version" ]; then
+            echo "Could not read INSTALLER_VERSION from the downloaded script." >&2
+            exit 1
+          fi
+          sed -i "s/__LATEST_VERSION__/$version/" site/index.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

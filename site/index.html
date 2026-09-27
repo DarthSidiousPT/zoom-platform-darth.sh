@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>zoom-platform-darth.sh</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="shortcut icon" href="favicon.svg" type="image/svg+xml" />
+  <meta name="theme-color" content="#b14bff" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description"
+    content="An unofficial fork of ZOOM Platform's Linux installer script, with game-specific launcher fixes, a cleaner uninstall and support for newer installers." />
+  <meta property="og:description"
+    content="An unofficial fork of ZOOM Platform's Linux installer script, with game-specific launcher fixes, a cleaner uninstall and support for newer installers." />
+  <meta property="og:title" content="zoom-platform-darth.sh" />
+  <meta property="og:url" content="https://darthsidiouspt.github.io/zoom-platform-darth.sh/" />
+  <meta property="og:site_name" content="zoom-platform-darth.sh" />
+  <meta property="og:image" content="og.png" />
+  <meta property="og:image:width" content="1280" />
+  <meta property="og:image:height" content="640" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="twitter:card" content="summary_large_image" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --bg-0: #0a0614;
+      --bg-1: #1a0b2e;
+      --violet: #b14bff;
+      --violet-soft: #d19bff;
+      --magenta: #ff3df2;
+      --cyan: #2de2e6;
+      --ink: #ede9f7;
+      --ink-dim: #a89bc4;
+      --glass-bg: rgba(30, 18, 54, 0.42);
+      --glass-border: rgba(177, 75, 255, 0.28);
+      --font-display: 'Chakra Petch', sans-serif;
+      --font-body: 'IBM Plex Sans', sans-serif;
+      --font-mono: '3270 Condensed', monospace;
+    }
+
+    @font-face {
+      font-family: '3270 Condensed';
+      font-style: normal;
+      font-display: block;
+      src: url('font/3270Condensed-Regular.woff2') format('woff2');
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      -moz-text-size-adjust: none;
+      -webkit-text-size-adjust: none;
+      text-size-adjust: none;
+    }
+
+    body,
+    h1,
+    h2,
+    h3,
+    p,
+    figure,
+    dl,
+    dd {
+      margin: 0;
+    }
+
+    ::selection {
+      color: #000;
+      background: var(--cyan);
+    }
+
+    body {
+      font-family: var(--font-body);
+      font-weight: 400;
+      background: var(--bg-0);
+      color: var(--ink);
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    a {
+      color: var(--violet-soft);
+      text-underline-offset: 0.2em;
+    }
+
+    a:hover {
+      color: var(--cyan);
+    }
+
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 3px;
+      border-radius: 2px;
+    }
+
+    /* ---------- Hero ---------- */
+
+    .hero {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3.5rem 1.25rem 0;
+      overflow: hidden;
+      background:
+        radial-gradient(ellipse 70% 45% at 50% 62%, rgba(177, 75, 255, 0.35), transparent 70%),
+        linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 100%);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5em;
+      font-family: var(--font-body);
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--ink-dim);
+      border: 1px solid var(--glass-border);
+      background: var(--glass-bg);
+      backdrop-filter: blur(8px);
+      padding: 0.4em 0.9em;
+      border-radius: 999px;
+      letter-spacing: 0.02em;
+    }
+
+    .badge .dot {
+      width: 0.45em;
+      height: 0.45em;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 6px var(--cyan);
+      flex: none;
+    }
+
+    .wordmark {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: clamp(1.9rem, 7vw, 3.4rem);
+      text-align: center;
+      margin-top: 1.1rem;
+      color: var(--violet-soft);
+      text-shadow:
+        0 0 6px rgba(177, 75, 255, 0.75),
+        0 0 24px rgba(177, 75, 255, 0.5),
+        0 0 60px rgba(255, 61, 242, 0.25);
+      animation: sign-on 1.8s ease-out 1;
+    }
+
+    @keyframes sign-on {
+      0% {
+        opacity: 0;
+      }
+
+      6% {
+        opacity: 1;
+      }
+
+      8% {
+        opacity: 0.3;
+      }
+
+      10% {
+        opacity: 1;
+      }
+
+      12% {
+        opacity: 0.4;
+      }
+
+      14%,
+      100% {
+        opacity: 1;
+      }
+    }
+
+    .tagline {
+      font-family: var(--font-body);
+      font-size: 1rem;
+      color: var(--ink-dim);
+      text-align: center;
+      margin-top: 0.6rem;
+      max-width: 34ch;
+    }
+
+    /* Perspective grid + horizon */
+
+    .horizon {
+      position: relative;
+      width: 100%;
+      height: min(46vw, 300px);
+      margin-top: 2.2rem;
+      overflow: hidden;
+    }
+
+    .horizon-glow {
+      position: absolute;
+      inset: -20% 0 auto 0;
+      height: 60%;
+      background: radial-gradient(ellipse 60% 100% at 50% 100%, rgba(45, 226, 230, 0.35), transparent 75%);
+      filter: blur(4px);
+    }
+
+    .grid-plane {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(177, 75, 255, 0.55) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(177, 75, 255, 0.55) 1px, transparent 1px);
+      background-size: 48px 48px;
+      background-position: center top;
+      transform: perspective(220px) rotateX(62deg);
+      transform-origin: 50% 0%;
+      mask-image: linear-gradient(to top, black 0%, black 55%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to top, black 0%, black 55%, transparent 100%);
+      animation: grid-scroll 5s linear infinite;
+    }
+
+    @keyframes grid-scroll {
+      from {
+        background-position: center top;
+      }
+
+      to {
+        background-position: center 48px;
+      }
+    }
+
+    .tux {
+      position: absolute;
+      bottom: 12%;
+      left: 50%;
+      width: min(30vw, 150px);
+      transform: translateX(-50%);
+      image-rendering: pixelated;
+      filter: drop-shadow(0 0 10px rgba(177, 75, 255, 0.6)) drop-shadow(0 0 22px rgba(177, 75, 255, 0.35));
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      .wordmark,
+      .grid-plane {
+        animation: none;
+      }
+    }
+
+    /* Command box */
+
+    .command-wrap {
+      width: 100%;
+      max-width: 880px;
+      padding: 0 1.25rem;
+      margin-top: -1rem;
+      z-index: 1;
+    }
+
+    .command-box {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      border-radius: 0.85em;
+      padding: 1em 1.1em;
+      background: rgba(10, 6, 20, 0.75);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--glass-border);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 12px 40px rgba(177, 75, 255, 0.15);
+    }
+
+    .command-box pre {
+      flex: 1;
+      min-width: 0;
+      font-family: var(--font-mono);
+      font-weight: 500;
+      font-size: clamp(0.72rem, 2.6vw, 1.15rem);
+      white-space: pre-wrap;
+      word-break: break-all;
+      padding-top: 0.15em;
+    }
+
+    .command-box pre::before {
+      content: '$ ';
+      color: #5a5470;
+    }
+
+    .cmd-bin {
+      color: #c9d4ff;
+    }
+
+    .cmd-arg {
+      color: var(--cyan);
+    }
+
+    .cmd-pipe {
+      color: #c9d4ff;
+    }
+
+    #copy-btn {
+      all: unset;
+      display: flex;
+      align-items: center;
+      padding: 0.5em;
+      cursor: pointer;
+      border-radius: 0.5em;
+      color: var(--ink-dim);
+      flex: none;
+    }
+
+    #copy-btn:hover,
+    #copy-btn:focus-visible {
+      background: rgba(177, 75, 255, 0.18);
+      color: var(--ink);
+    }
+
+    #copy-btn svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    #copy-btn path.copy-ok,
+    #copy-btn path.copy-err {
+      stroke-dasharray: 10;
+      stroke-dashoffset: -10;
+      transition: stroke-dashoffset ease 100ms 500ms;
+    }
+
+    #copy-btn path.shown {
+      stroke-dashoffset: 0;
+    }
+
+    .command-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 0.5em 1em;
+      font-size: 0.82rem;
+      margin-top: 0.7em;
+      color: var(--ink-dim);
+    }
+
+    .version-pill {
+      font-family: var(--font-mono);
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      padding: 0.15em 0.7em;
+    }
+
+    .version-pill[hidden] {
+      display: none;
+    }
+
+    /* ---------- Sections ---------- */
+
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3.5rem 1.25rem 1rem;
+      background: var(--bg-1);
+    }
+
+    .intro {
+      max-width: 58ch;
+      text-align: center;
+      font-size: 1.08rem;
+      color: var(--ink);
+    }
+
+    .intro a {
+      white-space: nowrap;
+    }
+
+    section.group {
+      width: 100%;
+      max-width: 900px;
+      margin-top: 4rem;
+    }
+
+    .group h2 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1.5rem;
+      text-align: center;
+      color: var(--ink);
+      margin-bottom: 1.75rem;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+
+    .card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--glass-border);
+      border-radius: 0.9em;
+      padding: 1.3em 1.4em;
+    }
+
+    .card h3 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1.02rem;
+      color: var(--violet-soft);
+      margin-bottom: 0.45em;
+    }
+
+    .card p {
+      font-size: 0.94rem;
+      color: var(--ink-dim);
+    }
+
+    .card p a {
+      color: var(--cyan);
+    }
+
+    .card--featured {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: flex-start;
+      gap: 1.1em;
+      background: linear-gradient(135deg, rgba(177, 75, 255, 0.16), rgba(45, 226, 230, 0.08));
+      border-color: rgba(177, 75, 255, 0.5);
+      box-shadow: 0 0 40px rgba(177, 75, 255, 0.12);
+    }
+
+    .card--featured .icon {
+      flex: none;
+      width: 2.4em;
+      height: 2.4em;
+      color: var(--cyan);
+    }
+
+    .card--featured h3 {
+      font-size: 1.15rem;
+      color: var(--ink);
+    }
+
+    .card--featured p {
+      color: var(--ink);
+      font-size: 1rem;
+    }
+
+    blockquote {
+      margin: 0.8em 0 0;
+      padding: 0.8em 1em;
+      border-left: 3px solid var(--cyan);
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 0 0.5em 0.5em 0;
+      font-size: 0.92rem;
+      color: var(--ink-dim);
+    }
+
+    /* ---------- Footer ---------- */
+
+    footer {
+      width: 100%;
+      max-width: 900px;
+      margin: 4rem auto 0;
+      padding: 1.75rem 1.25rem 2.5rem;
+      border-top: 1px solid rgba(177, 75, 255, 0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      font-size: 0.82rem;
+      color: var(--ink-dim);
+    }
+
+    footer .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4em 1.4em;
+    }
+
+    footer a {
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    footer .credits {
+      font-size: 0.76rem;
+      opacity: 0.7;
+    }
+
+    @media (max-width: 620px) {
+      .card-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .card--featured {
+        flex-direction: column;
+      }
+
+      footer .links {
+        gap: 0.5em 1em;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="hero">
+    <span class="badge"><span class="dot"></span>unofficial fork of ZOOM Platform's installer</span>
+    <h1 class="wordmark">zoom-platform-darth.sh</h1>
+    <p class="tagline">Installs ZOOM Platform's Windows games on Linux, with fixes that haven't reached the official
+      script yet.</p>
+
+    <div class="horizon" aria-hidden="true">
+      <div class="horizon-glow"></div>
+      <div class="grid-plane"></div>
+      <img class="tux" src="tux.png" alt="Tux, the Linux penguin" />
+    </div>
+
+    <div class="command-wrap">
+      <div class="command-box">
+        <pre><code><span class="cmd-bin">curl -L </span><span class="cmd-arg">darthsidiouspt.github.io/zoom-platform-darth.sh/i</span><span class="cmd-pipe"> | </span><span class="cmd-bin">sh</span></code></pre>
+        <button id="copy-btn" type="button" title="Copy to clipboard">
+          <svg fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <g stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5">
+              <path d="m9 6.75h-1.25c-1.10457 0-2 .89543-2 2v8.5c0 1.1046.89543 2 2 2h8.5c1.1046 0 2-.8954 2-2v-8.5c0-1.10457-.8954-2-2-2h-1.25" />
+              <path d="m14 8.25h-4c-.55228 0-1-.44772-1-1v-1.5c0-.55228.44772-1 1-1h4c.5523 0 1 .44772 1 1v1.5c0 .55228-.4477 1-1 1z" />
+              <path d="m15 11.5-3.938 4.615L9 13.808" stroke="#2de2e6" class="copy-ok" />
+              <path d="M12 14v-3m0 5.5h.01M14" stroke="#ff7171" class="copy-err" />
+            </g>
+          </svg>
+        </button>
+      </div>
+      <div class="command-meta">
+        <a href="i" download="zoom-platform-darth.sh">download the script directly</a>
+        <span class="version-pill" id="version-pill" hidden>__LATEST_VERSION__</span>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <p class="intro">An unofficial fork of ZOOM Platform's installer script, which installs their Windows games on
+      Linux with <a href="https://github.com/Open-Wine-Components/umu-launcher">umu</a> and Proton, carrying fixes
+      that haven't reached the official version yet.</p>
+
+    <section class="group" aria-labelledby="adds-heading">
+      <h2 id="adds-heading">What this fork adds</h2>
+      <div class="card-grid">
+        <div class="card card--featured">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75"
+              stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <div>
+            <h3>Game-specific launcher fixes</h3>
+            <p>Some games ship a launcher whose menu doesn't start the game correctly on Linux. This fork replaces it
+              during install with one that does &mdash; see
+              <a href="https://github.com/DarthSidiousPT/zoom-platform-darth.sh/blob/main/game-fixes/GAMES.md">which
+                games have a fix</a>. Every other game installs exactly as ZOOM built it.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Clean install and uninstall</h3>
+          <p>Each install only creates its own shortcuts, and uninstalling removes everything it added &mdash;
+            Desktop links, menu entries and launch scripts included.</p>
+        </div>
+
+        <div class="card">
+          <h3>Newer installers</h3>
+          <p>Works with games packaged with Inno Setup 6.3 and newer, which the official script's bundled
+            innoextract can't open.</p>
+        </div>
+
+        <div class="card">
+          <h3>Works on Ubuntu, Debian and Mint</h3>
+          <p>Runs correctly under <code>dash</code>, not only <code>bash</code>, so it works on the default shell of
+            these distros.</p>
+        </div>
+
+        <div class="card">
+          <h3>Big games split into parts</h3>
+          <p>For installers split across several <code>.bin</code> files, every part is checked for before the
+            install starts, not partway through.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="group" aria-labelledby="faq-heading">
+      <h2 id="faq-heading">Good to know</h2>
+      <div class="card-grid">
+        <div class="card">
+          <h3>What is umu/OWC?</h3>
+          <p>Here is how the <a href="https://github.com/Open-Wine-Components">Open Wine Components</a> group
+            describes itself:</p>
+          <blockquote>They're a group of people who work on wine-oriented projects that decided to get together to
+            unify their ideas for the benefit of each other's projects across the board, as well as future projects
+            that may use what they provide.</blockquote>
+        </div>
+
+        <div class="card">
+          <h3>Do I need Steam installed?</h3>
+          <p>No. OWC forked parts of the Steam Linux Runtime and Proton so they work without Steam.</p>
+        </div>
+
+        <div class="card">
+          <h3>Does every ZOOM game work?</h3>
+          <p>ZOOM tested their most popular games and submitted fixes for many of them; some work out of the box,
+            some may not work at all. Feel free to submit fixes to
+            <a href="https://github.com/Open-Wine-Components/umu-protonfixes">umu-protonfixes</a>.</p>
+        </div>
+
+        <div class="card">
+          <h3>Where do I submit a fix?</h3>
+          <p>General Proton fixes go to <a
+              href="https://github.com/Open-Wine-Components/umu-protonfixes">umu-protonfixes</a>. A broken launcher
+            specific to this script can go in this repo's
+            <a href="https://github.com/DarthSidiousPT/zoom-platform-darth.sh/blob/main/game-fixes/README.md">game-fixes</a>
+            folder.</p>
+        </div>
+
+        <div class="card">
+          <h3>Can I launch games through Steam?</h3>
+          <p>Depending on your distro, use Steam's "Add a Non-Steam Game..." and pick it from the list, or
+            right-click the desktop entry and choose "Add to Steam".</p>
+        </div>
+
+        <div class="card">
+          <h3>I want the official one!</h3>
+          <p>That's <a href="https://zoom-platform.sh/">zoom-platform.sh</a> &mdash; ZOOM Platform's own script, at
+            <code>curl zoom-platform.sh | sh</code>.</p>
+        </div>
+
+        <div class="card">
+          <h3>I have more questions</h3>
+          <p>Open a <a
+              href="https://github.com/DarthSidiousPT/zoom-platform-darth.sh/discussions">Discussion</a> on the
+            repo &mdash; that's where this fork talks about games, fixes and everything else.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p class="disclaimer">zoom-platform-darth.sh is an independent, unofficial fork of ZOOM Platform's installer
+      script. It is not endorsed by, affiliated with, or supported by ZOOM Platform.</p>
+    <div class="links">
+      <a href="https://github.com/DarthSidiousPT/zoom-platform-darth.sh">Source (BSD-3)</a>
+      <a href="https://github.com/DarthSidiousPT/zoom-platform-darth.sh/discussions">Discussions</a>
+      <a href="https://github.com/DarthSidiousPT/zoom-platform-darth.sh/releases">Releases</a>
+      <a href="https://www.zoom-platform.com/">ZOOM Platform</a>
+    </div>
+    <p class="credits">Tux by Larry Ewing (lewing@isc.tamu.edu) and The GIMP, recoloured as pixel art for this
+      page. "3270 Condensed" font under the 3270font license.</p>
+  </footer>
+
+  <script>
+    (function () {
+      var CMD = 'curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh';
+      var btn = document.getElementById('copy-btn');
+      var timeout;
+      btn.addEventListener('click', async function () {
+        var ok = btn.querySelector('.copy-ok');
+        var err = btn.querySelector('.copy-err');
+        try {
+          await navigator.clipboard.writeText(CMD);
+          ok.classList.add('shown');
+          err.classList.remove('shown');
+        } catch (e) {
+          err.classList.add('shown');
+          ok.classList.remove('shown');
+        }
+        clearTimeout(timeout);
+        timeout = setTimeout(function () {
+          ok.classList.remove('shown');
+          err.classList.remove('shown');
+        }, 2000);
+      });
+
+      // Checks for a leading "_" rather than the placeholder text itself,
+      // so a build's sed replacement of the placeholder can't also match
+      // (and break) this check.
+      var pill = document.getElementById('version-pill');
+      if (pill.textContent.charAt(0) !== '_') {
+        pill.hidden = false;
+      }
+    })();
+  </script>
+</body>
+
+</html>

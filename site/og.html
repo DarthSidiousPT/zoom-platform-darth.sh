@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>og</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Sans:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <style>
+    * {
+      margin: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 1280px;
+      height: 640px;
+      overflow: hidden;
+      background: #0a0614;
+      font-family: 'IBM Plex Sans', sans-serif;
+    }
+
+    .stage {
+      position: relative;
+      width: 1280px;
+      height: 640px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(ellipse 70% 55% at 50% 68%, rgba(177, 75, 255, 0.4), transparent 70%),
+        linear-gradient(180deg, #0a0614 0%, #1a0b2e 100%);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5em;
+      font-size: 20px;
+      font-weight: 500;
+      color: #a89bc4;
+      border: 1px solid rgba(177, 75, 255, 0.28);
+      background: rgba(30, 18, 54, 0.5);
+      padding: 8px 20px;
+      border-radius: 999px;
+    }
+
+    .badge .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #2de2e6;
+      box-shadow: 0 0 8px #2de2e6;
+    }
+
+    h1 {
+      font-family: 'Chakra Petch', sans-serif;
+      font-weight: 700;
+      font-size: 68px;
+      color: #d19bff;
+      margin-top: 26px;
+      text-shadow:
+        0 0 8px rgba(177, 75, 255, 0.8),
+        0 0 32px rgba(177, 75, 255, 0.55),
+        0 0 80px rgba(255, 61, 242, 0.3);
+    }
+
+    p {
+      font-size: 22px;
+      color: #a89bc4;
+      margin-top: 16px;
+    }
+
+    .grid-plane {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 260px;
+      background-image:
+        linear-gradient(rgba(177, 75, 255, 0.55) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(177, 75, 255, 0.55) 1px, transparent 1px);
+      background-size: 48px 48px;
+      transform: perspective(220px) rotateX(62deg);
+      transform-origin: 50% 0%;
+      mask-image: linear-gradient(to top, black 0%, black 45%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to top, black 0%, black 45%, transparent 100%);
+    }
+
+    .tux {
+      position: absolute;
+      bottom: 30px;
+      left: 50%;
+      width: 130px;
+      transform: translateX(-50%);
+      image-rendering: pixelated;
+      filter: drop-shadow(0 0 10px rgba(177, 75, 255, 0.7)) drop-shadow(0 0 22px rgba(177, 75, 255, 0.4));
+    }
+  </style>
+</head>
+
+<body>
+  <div class="stage">
+    <span class="badge"><span class="dot"></span>unofficial fork of ZOOM Platform's installer</span>
+    <h1>zoom-platform-darth.sh</h1>
+    <p>Game fixes, clean uninstall and newer installers &mdash; on Linux, via umu and Proton.</p>
+    <div class="grid-plane"></div>
+    <img class="tux" src="tux.png" alt="" />
+  </div>
+</body>
+
+</html>
