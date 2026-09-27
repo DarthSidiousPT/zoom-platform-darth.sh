@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   build:
-    if: github.repository == 'DarthSidiousPT/zoom-platform.sh'
+    if: github.repository == 'DarthSidiousPT/zoom-platform-darth.sh'
     runs-on: ubuntu-latest
 
     steps:

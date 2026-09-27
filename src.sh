@@ -10,11 +10,11 @@ INNOEXTRACT_BINARY_B64=0
 #__INNOEXTRACT_BINARY_END__
 
 INSTALLER_VERSION="DEV"
-REPO_PATH="https://github.com/DarthSidiousPT/zoom-platform.sh"
+REPO_PATH="https://github.com/DarthSidiousPT/zoom-platform-darth.sh"
 # Optional per-game fixes, read while installing: game-fixes/<ZOOM game GUID>.ini in this
 # repository (see game-fixes/README.md). Kept in files of their own so a game's quirk
 # doesn't need a change to this script, and only the installed game's file is downloaded.
-GAME_FIXES_URL="https://raw.githubusercontent.com/DarthSidiousPT/zoom-platform.sh/main/game-fixes"
+GAME_FIXES_URL="https://raw.githubusercontent.com/DarthSidiousPT/zoom-platform-darth.sh/main/game-fixes"
 INNOEXT_BIN="/tmp/innoextract_zoom"
 LAUNCH_SCRIPTS_PATH="$HOME"/.local/share/zoom-platform
 APPLICATIONS_ROOT="$HOME"/.local/share/applications/zoom-platform
