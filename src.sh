@@ -160,7 +160,7 @@ fatal_error() {
 }
 
 log_info() {
-    printf "\033[33m[\033[35mzoom-platform.sh\033[33m]\033[0m: %s\n" "$*"
+    printf "\033[33m[\033[35mzoom-platform-darth.sh\033[33m]\033[0m: %s\n" "$*"
 }
 
 base64_dec() {
@@ -252,12 +252,6 @@ get_desktop_value() {
     _key=$1
     _desktopfile=$2
     sed -n -e "/^$_key=/s/^$_key=//p" "$_desktopfile"
-}
-
-show_log_file_line() {
-    _install_dir=$(printf '%s' "$2" | sed 's/\\/\\\\/g')
-    _line=$(printf '%s' "$1" | sed -n "s/.*Dest filename: $_install_dir//p" | sed 's/^\\//;s/\\/\//g')
-    printf "\r\e[K\033[33m[\033[35mzoom-platform.sh\033[33m]\033[0m: Extracting: %s" "$_line"
 }
 
 # Generate command to launch umu with
@@ -1221,10 +1215,10 @@ EOL
 }
 
 show_usage() {
-    printf 'Usage: zoom-platform.sh [OPTIONS] INSTALLER DEST
+    printf 'Usage: zoom-platform-darth.sh [OPTIONS] INSTALLER DEST
 
 Description:
-  zoom-platform.sh - Install Windows games from ZOOM Platform using umu and Proton.
+  zoom-platform-darth.sh - Install Windows games from ZOOM Platform using umu and Proton.
 
 Options:
   -h, --help           Display this help message and exit.
@@ -1238,8 +1232,8 @@ Arguments:
   DEST                 Path to where you want the game to install to.
 
 Examples:
-  zoom-platform.sh "Game-English-Setup-1.33.7.exe" ~/Games/new_game_dir
-  zoom-platform.sh -i "Game-English-Setup-1.33.7.exe" -d ~/Games/new_game_dir
+  zoom-platform-darth.sh "Game-English-Setup-1.33.7.exe" ~/Games/new_game_dir
+  zoom-platform-darth.sh -i "Game-English-Setup-1.33.7.exe" -d ~/Games/new_game_dir
 
 Note:
   - INSTALLER and DEST are optional if your environment can use KDialog or Zenity.
@@ -1301,7 +1295,7 @@ else
     fatal_error "Could not decode base64." "Error unpacking innoextract"
 fi
 
-# Check if UWU is installed
+# Check if UMU is installed
 if command -v umu-run > /dev/null; then
     UMU_BIN=umu-run
     log_info "Using umu native"
@@ -1526,9 +1520,8 @@ while [ $_readlog -eq 1 ]; do
     while read -r line || [ -n "$line" ]; do
         case $line in
             *"Dest filename: "*)
-                # show_log_file_line "$line" "$(get_header_val 'default_dir_name')" # too slow
                 _currentfile=$((_currentfile+1))
-                printf "\r\e[K\033[33m[\033[35mzoom-platform.sh\033[33m]\033[0m: Extracting: %d/%d" $_currentfile $_filecount
+                printf "\r\e[K\033[33m[\033[35mzoom-platform-darth.sh\033[33m]\033[0m: Extracting: %d/%d" $_currentfile $_filecount
             ;;
             *"Exception message"* | *"Got EAbort exception"*)
                 _readlog=0
