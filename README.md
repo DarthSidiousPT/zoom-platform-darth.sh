@@ -48,10 +48,13 @@ The fork's own site is a static `index.html` in [site](site), deployed to GitHub
 
 ## Usage
 
-For the script help, see `-h`.
-
 ```
 curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh
+```
+
+For the script's help text, `-h` has to go after `-s --` since the script is piped in:
+```
+curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- -h
 ```
 
 ### Games split into several files
