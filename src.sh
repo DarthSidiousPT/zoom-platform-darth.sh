@@ -73,10 +73,28 @@ dialog_install_dir_select() {
     fi
 }
 
+# zenity's --width/--height are only honoured by its more complex dialog types
+# (--text-info, --list, ...), not by the simple ones used here (--error, --warning,
+# --info, --question), so one long line makes those stretch to fit it instead of
+# wrapping - on a small screen (1280x720 laptop) that can run off the edge. Folding
+# every message to a fixed column count first sidesteps this for both zenity and
+# kdialog: existing blank lines and short lines are untouched, only a line over the
+# width gets broken (at a space, so words are never split). The zenity calls still
+# pass --no-wrap - with everything pre-wrapped, that just means "trust the line
+# breaks I'm giving you" instead of "don't wrap at all".
+# $1: Text to wrap
+wrap_dialog_msg() {
+    if command -v fold > /dev/null; then
+        printf '%s\n' "$1" | fold -s -w 78
+    else
+        printf '%s' "$1"
+    fi
+}
+
 dialog_msgbox() {
     _type=$1
     _title=$2
-    _msg=$3
+    _msg=$(wrap_dialog_msg "$3")
 
     [ -z "$_title" ] && _title=""
 
@@ -118,11 +136,13 @@ ask_continue() {
     printf '%s\n' "$_ac_msg" >&2
 
     if [ $CAN_USE_DIALOGS -eq 1 ]; then
+        # See wrap_dialog_msg: zenity/kdialog's question dialog ignores --width too
+        _ac_wrapped=$(wrap_dialog_msg "$_ac_msg")
         if [ $USE_ZENITY -eq 1 ]; then
-            zenity --question --no-wrap --title="$_ac_title" --text="$_ac_msg" \
+            zenity --question --no-wrap --title="$_ac_title" --text="$_ac_wrapped" \
                 --ok-label="Continue" --cancel-label="Cancel"
         else
-            kdialog --warningcontinuecancel "$_ac_msg" --title "$_ac_title"
+            kdialog --warningcontinuecancel "$_ac_wrapped" --title "$_ac_title"
         fi
         return $?
     fi
@@ -393,12 +413,25 @@ describe_slice_problem() {
 # Inno Setup only looks for a file when it gets to it, so a part that's missing
 # (or that a browser saved as "...-2 (1).bin" or "...-2(1).bin" because the first
 # download failed or was repeated) would only show up in the middle of the install.
-# This checks everything up front:
-# - Something missing or misnamed: stops and says what to rename.
-# - Something looks incomplete: warns, and continues if the user says so.
+# This checks everything up front and sorts problems into three buckets:
+# - Misnamed (found under a browser's counter suffix) or unreadable (permissions):
+#   stops and says what to rename or chmod. Inno's own "next disk" prompt (below)
+#   wouldn't find these either, since it only asks for the exact name it expects.
+# - Not found under any name at all: warns, and continues if the user says so. Inno
+#   Setup has its own "Setup Needs the Next Disk" dialog for exactly this case (a
+#   Browse button that picks a *folder*, which Inno then checks for the expected
+#   filename), so someone with the parts on separate discs/drives/folders can feed
+#   them in one at a time instead of having them all sit next to the .exe.
+# - Looks incomplete (found under the right name, but shorter than its own header
+#   says): warns, and continues if the user says so, same as "not found".
 # Needs "slice_count" from the innoextract fork's --print-headers. Without it (older
 # innoextract, or the data is inside the .exe) there's nothing to check.
 check_installer_slices() {
+    # Filled in below with the parts Setup will still have to ask for by name, if any
+    # (one "- Part N of M: name.bin" line per part); read by the caller for a
+    # heads-up right before the installer launches.
+    SLICES_NOT_FOUND=''
+
     _cis_count=$(get_header_val 'slice_count')
     case $_cis_count in
         '' | 0 | *[!0-9]*) return 0 ;;
@@ -428,8 +461,9 @@ check_installer_slices() {
 
     _cis_nl='
 '
-    _cis_missing=''    # Lines about parts that aren't there under the right name
-    _cis_incomplete='' # Lines about parts that are there but look cut short
+    _cis_missing=''    # Lines about parts that are misnamed or unreadable: always fatal
+    _cis_absent=''     # Lines about parts not found under any name: a warning, see above
+    _cis_incomplete='' # Lines about parts that are there but look cut short: a warning too
 
     _cis_n=1
     while [ "$_cis_n" -le "$_cis_count" ]; do
@@ -464,7 +498,7 @@ check_installer_slices() {
                 [ -n "$_cis_problem" ] && _cis_note=" ($_cis_problem)"
                 _cis_missing="$_cis_missing$_cis_nl- Part $_cis_n of $_cis_count: rename \"${_cis_cand##*/}\"$_cis_note to \"${_cis_want##*/}\""
             done
-            [ $_cis_found -eq 0 ] && _cis_missing="$_cis_missing$_cis_nl- Part $_cis_n of $_cis_count not found: ${_cis_want##*/}"
+            [ $_cis_found -eq 0 ] && _cis_absent="$_cis_absent$_cis_nl- Part $_cis_n of $_cis_count: ${_cis_want##*/}"
         fi
         _cis_n=$((_cis_n+1))
     done
@@ -472,6 +506,7 @@ check_installer_slices() {
     if [ -n "$_cis_missing" ]; then
         _cis_msg="This installer comes in $_cis_count data files (.bin) that must be in the same folder, with names that start with the installer's:$_cis_nl$_cis_dir$_cis_nl$_cis_missing"
         [ -n "$_cis_incomplete" ] && _cis_msg="$_cis_msg$_cis_nl${_cis_nl}These also look wrong:$_cis_incomplete"
+        [ -n "$_cis_absent" ] && _cis_msg="$_cis_msg$_cis_nl${_cis_nl}These weren't found anywhere either (fix the problems above first, then run the script again to see if Setup can ask for these itself):$_cis_absent"
         # If the installer itself was renamed, renaming it back is an alternative
         if [ "$_cis_stem" != "$_cis_orig" ]; then
             _cis_msg="$_cis_msg$_cis_nl${_cis_nl}The installer's own name has a download counter too. If the .bin files have the original names, renaming the installer back to \"$_cis_orig${_cis_exe#"$_cis_stem"}\" is enough."
@@ -479,10 +514,28 @@ check_installer_slices() {
         fatal_error "$_cis_msg${_cis_nl}${_cis_nl}Fix the names and run the script again." "Installer files missing"
     fi
 
-    if [ -n "$_cis_incomplete" ]; then
-        ask_continue "Installer files look damaged or incomplete" \
-            "These files don't look right, their download probably didn't finish:$_cis_incomplete${_cis_nl}${_cis_nl}The installation will most likely fail partway through." ||
-            fatal_error "Cancelled. Download the incomplete files again and run the script again." "Cancelled"
+    if [ -n "$_cis_absent" ] || [ -n "$_cis_incomplete" ]; then
+        if [ -n "$_cis_absent" ] && [ -n "$_cis_incomplete" ]; then
+            _cis_title="Installer files not found or incomplete"
+        elif [ -n "$_cis_absent" ]; then
+            _cis_title="Installer files not found"
+        else
+            _cis_title="Installer files look damaged or incomplete"
+        fi
+
+        _cis_msg=''
+        if [ -n "$_cis_absent" ]; then
+            _cis_msg="These data files (.bin) weren't found next to the installer:$_cis_absent${_cis_nl}${_cis_nl}Setup has its own way to handle this: it will ask for each one by name during install (a \"Setup Needs the Next Disk\" dialog).${_cis_nl}When it does, point it at whatever folder, disc or drive actually holds that file.${_cis_nl}The folder doesn't matter, but the file must keep the exact name shown above."
+        fi
+        if [ -n "$_cis_incomplete" ]; then
+            [ -n "$_cis_msg" ] && _cis_msg="$_cis_msg$_cis_nl$_cis_nl"
+            _cis_msg="${_cis_msg}These files don't look right, their download probably didn't finish:$_cis_incomplete${_cis_nl}${_cis_nl}The installation will most likely fail partway through."
+        fi
+
+        ask_continue "$_cis_title" "$_cis_msg" ||
+            fatal_error "Cancelled. Fix the files listed above and run the script again." "Cancelled"
+
+        SLICES_NOT_FOUND=$_cis_absent
     else
         log_info "Found all $_cis_count installer data files"
     fi
@@ -1789,6 +1842,9 @@ VERYSILENT=0
 # Launch installer in a subprocess
 # Only important stuff like the EULA and configurable items should show.
 # "/ZOOMINSTALLERGUID=" is only used so we can easily find the process with pkill -f
+# check_installer_slices may have left some .bin parts unaccounted for (SLICES_NOT_FOUND);
+# a heads-up here so Setup's own "next disk" dialog isn't a surprise mid-install
+[ -n "$SLICES_NOT_FOUND" ] && log_info "Setup will still ask for these installer data files by name:$SLICES_NOT_FOUND"
 log_info "Launching installer..."
 umu_launch "$INPUT_INSTALLER" \
     /NORESTART \

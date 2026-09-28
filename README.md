@@ -29,6 +29,10 @@
 
 <sub>Official script = the [v1.0.1 release](https://github.com/ZOOM-Platform/zoom-platform.sh/releases/tag/v1.0.1) that `curl zoom-platform.sh` serves, checked September 2026. Some of these are already fixed in its unreleased development code.</sub>
 
+### Games split into several files
+
+Some big games (such as Necro Vision) come as one `.exe` plus `-1.bin`, `-2.bin`, ... files. Normally you'd download all of them into the same folder, keep their names, and choose the `.exe`. Before installing, the script checks that every part is there and complete. If your browser renamed one (`-1 (1).bin`), it tells you which file to rename. A part that's missing entirely, or that looks cut short, is a warning you can choose to continue past - for a missing part, Setup's own installer will ask you to browse to wherever it actually is (another folder, disc or drive) once it reaches that part, so the parts don't all have to sit together if you'd rather feed them in one at a time.
+
 ---
 
 A tool to streamline installation, updating, and playing Windows games from [ZOOM Platform](https://www.zoom-platform.com/) on Linux using [umu](https://github.com/Open-Wine-Components/umu-launcher) and Proton.
@@ -56,10 +60,6 @@ For the script's help text, `-h` has to go after `-s --` since the script is pip
 ```
 curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- -h
 ```
-
-### Games split into several files
-
-Some big games (such as Necro Vision) come as one `.exe` plus `-1.bin`, `-2.bin`, ... files. Download all of them into the same folder, keep their names, and choose the `.exe`. Before installing, the script checks that every part is there and complete. If one is missing, or your browser renamed it (`-1 (1).bin`), it tells you which file to rename, and a part that looks cut short is a warning you can choose to continue past.
 
 ## Contributing
 
