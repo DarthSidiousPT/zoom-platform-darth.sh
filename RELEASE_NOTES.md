@@ -1,1 +1,1 @@
-This fork now has its own website, with the fork's own name, a "what's different" list, and an install command that always points at the latest release. The script's requests to Lutris, Open Wine Components, and this repo's own game-fixes files now identify themselves as this fork instead of the official script.
+Small tweaks to website and `src.sh` script.
