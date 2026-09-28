@@ -107,7 +107,7 @@ log_warning() {
 # Asks a yes/no question where "no" is the safe default, in a dialog if possible,
 # otherwise in the terminal. Returns 0 only if the user chose to continue.
 # The terminal question reads from /dev/tty: stdin can't be used since the script
-# itself may be coming in through it (cat zoom-platform.sh | sh).
+# itself may be coming in through it (cat zoom-platform-darth.sh | sh).
 # $1: Title
 # $2: Message
 ask_continue() {
