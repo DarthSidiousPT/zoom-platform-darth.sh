@@ -42,7 +42,7 @@ A tool to streamline installation, updating, and playing Windows games from [ZOO
 | Script       | Example                                             | -                                                                                                                  |
 | ------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | **build.sh** | `./build.sh "src.sh" "innoextract-upx" > output.sh` | Takes an input `src.sh`, embeds an innoextract binary, sets the version, prepends licences then prints the output. |
-| **dist.sh**  |                                                     | Downloads innoextract then creates a `zoom-platform.sh` file using `build.sh`                                      |
+| **dist.sh**  |                                                     | Downloads innoextract then creates a `zoom-platform-darth.sh` file using `build.sh`                                      |
 
 ## Website
 
@@ -68,3 +68,8 @@ Please see [CONTRIBUTING.md](CONTRIBUTING.md)
 ## Licence
 
 [BSD-3](LICENSE)
+
+## AI usage
+
+AI is used to debug, explain and write most of the code in this fork, but it's guided manually. It isn't vibe coded (the
+GitHub [site page](https://darthsidiouspt.github.io/zoom-platform-darth.sh/) is the exception, since that one was): every change is reviewed and tested before it gets committed.

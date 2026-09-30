@@ -27,6 +27,12 @@ APPLICATIONS_ROOT="$HOME"/.local/share/applications/zoom-platform
 WINE_MENU_ROOT="$HOME"/.local/share/applications/wine/Programs
 UMU_BIN=umu-run
 CACHE_DIR="$HOME"/.cache/zoom-platform
+# Where umu looks for Proton builds, and where a game's pinned build is unpacked (see
+# ensure_pinned_proton). A build already in there is used as it is, never downloaded twice.
+PROTON_COMPAT_DIR="$HOME"/.local/share/Steam/compatibilitytools.d
+PROTON_GE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download"
+# The pinned Proton build's folder, empty when the game isn't pinned (umu then picks its own)
+ZOOM_PROTONPATH=''
 
 # Resolve the Desktop dir once, with a fallback in case xdg-utils isn't
 # installed. Baked into the generated uninstall.sh too, so uninstalling
@@ -285,7 +291,12 @@ get_desktop_value() {
 umu_launch_command() {
     if [ "$UMU_BIN" = "FLATPAK" ]; then
         # shellcheck disable=SC2016
-        printf '%s' 'flatpak run --env=GAMEID="$GAMEID" --env=WINEPREFIX="$WINEPREFIX" --env=STORE="$STORE" org.openwinecomponents.umu.umu-launcher'
+        printf '%s' 'flatpak run --env=GAMEID="$GAMEID" --env=WINEPREFIX="$WINEPREFIX" --env=STORE="$STORE"'
+        # A pinned game's launch script only has PROTONPATH set while the pinned folder is
+        # there (see pinned_proton_launch_lines), and umu doesn't take an empty one
+        # shellcheck disable=SC2016
+        [ -n "$ZOOM_PROTONPATH" ] && printf '%s' ' ${PROTONPATH:+--env=PROTONPATH=$PROTONPATH}'
+        printf '%s' ' org.openwinecomponents.umu.umu-launcher'
     else
         printf '%s' "$UMU_BIN"
     fi
@@ -307,6 +318,8 @@ umu_launch() {
             eval "_fwd_val=\${$_fwd_name}"
             set -- "--env=$_fwd_name=$_fwd_val" "$@"
         done
+        # Only a pinned game gets PROTONPATH, so the user's own one is never passed in
+        [ -n "$ZOOM_PROTONPATH" ] && set -- "--env=PROTONPATH=$ZOOM_PROTONPATH" "$@"
         flatpak run --env=GAMEID="$GAMEID" --env=WINEPREFIX="$WINEPREFIX" --env=PROTON_VERB="$PROTON_VERB" "$@"
     else
         "$UMU_BIN" "$@"
@@ -1025,6 +1038,10 @@ EOL
 # warn about. The file comes off the network and its values end up inside a generated
 # shell script (args unquoted), so every value is checked here against a short list of
 # allowed characters, and none can hold the "|" that separates the fields above.
+# The keys before the first [section] apply to the whole game. The three that pin a
+# Proton build (proton, proton_asset, proton_sha512) come out as one extra line, with an
+# empty first field so it can't be mistaken for a launcher:
+#   |proton|tag|asset|sha512      or      !|proton|reason
 # $1: the file
 parse_game_fixes() {
     awk '
@@ -1066,6 +1083,21 @@ parse_game_fixes() {
             if (why != "") print "!|" n "|" why
             else print name "|" replaces "|" exe "|" workdir "|" args
         }
+        # Prints the pinned Proton build from the keys before the first section, if any.
+        # The tag and asset end up in a URL and a path, so they are held to the naming
+        # GloriousEggroll uses: the asset is the tag plus .tar.gz, or -x86_64.tar.gz for the
+        # releases that ship both architectures. The checksum is what makes the download
+        # trustworthy.
+        function game_wide(    why) {
+            if (g_tag == "" && g_asset == "" && g_sha == "") return
+            why = ""
+            if (g_tag == "" || g_asset == "" || g_sha == "") why = "proton, proton_asset and proton_sha512 must all be given"
+            else if (g_tag !~ /^GE-Proton[0-9]+-[0-9]+$/) why = "proton must look like GE-Proton11-7"
+            else if (g_asset != (g_tag ".tar.gz") && g_asset != (g_tag "-x86_64.tar.gz")) why = "proton_asset must be the proton value followed by .tar.gz or -x86_64.tar.gz"
+            else if (length(g_sha) != 128 || !only(g_sha, "0123456789abcdef")) why = "proton_sha512 must be 128 lowercase hex characters"
+            if (why != "") print "!|proton|" why
+            else print "|proton|" g_tag "|" g_asset "|" g_sha
+        }
         BEGIN {
             ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         }
@@ -1079,6 +1111,14 @@ parse_game_fixes() {
             replaces = exe = workdir = args = ""
             next
         }
+        !open && index($0, "=") { # before the first section: keys for the whole game
+            k = trim(substr($0, 1, index($0, "=") - 1))
+            v = trim(substr($0, index($0, "=") + 1))
+            if (k == "proton") g_tag = v
+            else if (k == "proton_asset") g_asset = v
+            else if (k == "proton_sha512") g_sha = v
+            next
+        }
         open && index($0, "=") {
             k = trim(substr($0, 1, index($0, "=") - 1))
             v = trim(substr($0, index($0, "=") + 1))
@@ -1089,7 +1129,7 @@ parse_game_fixes() {
             # any other key is ignored, so an older script can read a newer file
             next
         }
-        END { finish() }
+        END { finish(); game_wide() }
     ' "$1"
 }
 
@@ -1100,6 +1140,9 @@ parse_game_fixes() {
 # ZOOM_GAME_FIXES_FILE to read a local file instead of downloading it.
 load_game_fixes() {
     GAME_FIXES=''
+    GAME_FIXES_PROTON=''
+    GAME_FIXES_PROTON_ASSET=''
+    GAME_FIXES_PROTON_SHA512=''
     _gf_nl='
 '
     _gf_file="$CACHE_DIR/game-fixes.ini"
@@ -1142,6 +1185,13 @@ load_game_fixes() {
     _gf_count=0
     _gf_names=''
     while IFS='|' read -r _gf_a _gf_b _gf_c _gf_d _gf_e; do
+        # The pinned Proton build has an empty first field (see parse_game_fixes)
+        if [ -z "$_gf_a" ] && [ "$_gf_b" = 'proton' ]; then
+            GAME_FIXES_PROTON=$_gf_c
+            GAME_FIXES_PROTON_ASSET=$_gf_d
+            GAME_FIXES_PROTON_SHA512=$_gf_e
+            continue
+        fi
         [ -n "$_gf_a" ] || continue
         if [ "$_gf_a" = '!' ]; then
             log_warning "Game fixes: ignoring \"$_gf_b\": $_gf_c"
@@ -1153,11 +1203,187 @@ load_game_fixes() {
     done <<EOL
 $_gf_parsed
 EOL
-    if [ $_gf_count -eq 0 ]; then
-        log_info "Game fixes: no usable launcher in the file"
-    else
+    if [ $_gf_count -gt 0 ]; then
         log_info "Game fixes: $_gf_count launcher(s) for this game: $_gf_names"
+    elif [ -z "$GAME_FIXES_PROTON" ]; then
+        log_info "Game fixes: no usable launcher in the file"
     fi
+    if [ -n "$GAME_FIXES_PROTON" ]; then
+        log_info "Game fixes: this game is pinned to $GAME_FIXES_PROTON"
+    fi
+}
+
+# Prints the SHA-512 of a file, with whichever tool the system has
+# $1: the file
+get_sha512() {
+    if command -v sha512sum > /dev/null; then
+        sha512sum "$1" | cut -d ' ' -f1
+    elif command -v openssl > /dev/null; then
+        openssl dgst -sha512 "$1" | sed 's/^.*= //'
+    else
+        return 1
+    fi
+}
+
+# Downloads a pinned Proton build and unpacks it into $PROTON_COMPAT_DIR, where umu looks
+# for builds. The download has to match the SHA-512 from the game's fixes file. It is
+# unpacked next to its final place and moved in whole, so a half-unpacked folder is never
+# taken for a finished one. Returns 1, after a warning saying why, when it can't be had.
+# $1: release tag, $2: asset (file name of the tarball), $3: the tarball's SHA-512
+download_pinned_proton() {
+    _dp_tag=$1
+    _dp_asset=$2
+    _dp_sha=$3
+    # GE-Proton tarballs hold one folder named after the tarball, which is also the name
+    # umu gives a build it downloads itself
+    _dp_name=${_dp_asset%.tar.gz}
+    _dp_dir="$PROTON_COMPAT_DIR/$_dp_name"
+    _dp_file="$CACHE_DIR/$_dp_asset"
+
+    if ! command -v tar > /dev/null; then
+        log_warning "Pinned Proton: tar was not found on this system"
+        return 1
+    fi
+    if ! mkdir -p "$CACHE_DIR" "$PROTON_COMPAT_DIR"; then
+        log_warning "Pinned Proton: couldn't create $PROTON_COMPAT_DIR"
+        return 1
+    fi
+
+    log_info "Pinned Proton: downloading $_dp_asset (about 500 MB, only needed the first time)..."
+    rm -f "$_dp_file"
+    # --fail so an error page is never saved as the tarball. The speed limit gives up on a
+    # connection that has stalled, since there is no overall time limit on a big download.
+    if ! curl -L --fail --progress-bar --connect-timeout 15 --speed-limit 1024 --speed-time 60 \
+            -H "User-Agent: $HTTP_USER_AGENT" -o "$_dp_file" "$PROTON_GE_URL/$_dp_tag/$_dp_asset"; then
+        rm -f "$_dp_file"
+        log_warning "Pinned Proton: couldn't download $PROTON_GE_URL/$_dp_tag/$_dp_asset"
+        return 1
+    fi
+    if [ "$(get_sha512 "$_dp_file")" != "$_dp_sha" ]; then
+        rm -f "$_dp_file"
+        log_warning "Pinned Proton: $_dp_asset doesn't match the checksum in the game fixes file, not using it"
+        return 1
+    fi
+
+    log_info "Pinned Proton: checksum OK, unpacking..."
+    _dp_tmp=$(mktemp -d "$PROTON_COMPAT_DIR/.zoom-unpack.XXXXXX") || {
+        rm -f "$_dp_file"
+        log_warning "Pinned Proton: couldn't create a folder in $PROTON_COMPAT_DIR"
+        return 1
+    }
+    if ! tar -xzf "$_dp_file" -C "$_dp_tmp" || [ ! -f "$_dp_tmp/$_dp_name/toolmanifest.vdf" ]; then
+        rm -rf "$_dp_tmp" "$_dp_file"
+        log_warning "Pinned Proton: couldn't unpack $_dp_asset"
+        return 1
+    fi
+    rm -f "$_dp_file"
+
+    # Another install may have finished the same build in the meantime, and then its copy
+    # is the one to use. mv would put ours inside an existing folder instead of failing, so
+    # a run that finishes between the check and the move leaves a copy in there to remove.
+    if [ ! -e "$_dp_dir" ]; then
+        mv "$_dp_tmp/$_dp_name" "$_dp_dir" 2> /dev/null
+        [ -d "$_dp_dir/$_dp_name" ] && rm -rf "${_dp_dir:?}/$_dp_name"
+    fi
+    rm -rf "$_dp_tmp"
+    if [ ! -f "$_dp_dir/toolmanifest.vdf" ]; then
+        log_warning "Pinned Proton: couldn't move $_dp_name into $PROTON_COMPAT_DIR"
+        return 1
+    fi
+    return 0
+}
+
+# Picks the Proton build this game runs on and makes sure it is there. Sets
+# ZOOM_PROTONPATH, and exports PROTONPATH for the umu calls that follow, when it is a pinned
+# one. In order: the build the game's fixes file pins, else the one this prefix was made
+# with (drive_c/zoom_proton, so a DLC or a reinstall stays on the base game's build), else
+# none, which leaves the choice to umu. Not being able to get a pinned build is never
+# fatal: the install goes on with umu's own Proton.
+ensure_pinned_proton() {
+    ZOOM_PROTONPATH=''
+    _pp_marker="$INSTALL_PATH/drive_c/zoom_proton"
+    _pp_name=''
+    _pp_sha=''
+
+    if [ -n "$GAME_FIXES_PROTON" ]; then
+        _pp_name=${GAME_FIXES_PROTON_ASSET%.tar.gz}
+        _pp_sha=$GAME_FIXES_PROTON_SHA512
+    elif [ -f "$_pp_marker" ]; then
+        read -r _pp_name _pp_sha < "$_pp_marker"
+        # The name ends up in a path, so it gets the same check as in the fixes file. No
+        # group in the pattern: expr exits 1 when the group matches nothing.
+        _pp_base=${_pp_name%-x86_64}
+        if ! expr "$_pp_base" : '^GE-Proton[0-9][0-9]*-[0-9][0-9]*$' > /dev/null; then
+            _pp_name=''
+        fi
+    fi
+    [ -n "$_pp_name" ] || return 0
+
+    # The path is written into launch scripts and passed to the Flatpak, neither of which
+    # can carry spaces or shell characters
+    case $PROTON_COMPAT_DIR in
+        *[!A-Za-z0-9._/+-]*)
+            log_warning "Pinned Proton: $PROTON_COMPAT_DIR has characters that can't be used, going on with umu's own Proton"
+            return 0
+            ;;
+    esac
+
+    _pp_path="$PROTON_COMPAT_DIR/$_pp_name"
+    if [ -f "$_pp_path/toolmanifest.vdf" ]; then
+        log_info "Pinned Proton: $_pp_name is already installed"
+    elif [ -n "$GAME_FIXES_PROTON" ]; then
+        if ! download_pinned_proton "$GAME_FIXES_PROTON" "$GAME_FIXES_PROTON_ASSET" "$GAME_FIXES_PROTON_SHA512"; then
+            log_warning "Pinned Proton: going on with umu's own Proton"
+            return 0
+        fi
+    else
+        log_warning "Pinned Proton: this prefix was made with $_pp_name, which isn't installed any more. Going on with umu's own Proton"
+        return 0
+    fi
+
+    ZOOM_PROTONPATH=$_pp_path
+    export PROTONPATH="$ZOOM_PROTONPATH"
+    mkdir -p "$INSTALL_PATH/drive_c"
+    printf '%s %s\n' "$_pp_name" "$_pp_sha" > "$_pp_marker"
+    log_info "Pinned Proton: this game runs on $_pp_name"
+}
+
+# Prints the lines a launch script needs when its game is pinned to a Proton build (nothing
+# when it isn't). The pinned folder is shared, and tools like ProtonUp-Qt can delete it
+# without knowing a game uses it, so the script checks it is still there. If it is gone
+# the game starts on umu's own Proton and says so. A launch never downloads anything.
+pinned_proton_launch_lines() {
+    [ -n "$ZOOM_PROTONPATH" ] || return 0
+    _pl_msg=$(quote_sq "${ZOOM_PROTONPATH##*/} (pinned for $GAME_NAME_SAFE) was removed, so the default Proton is used. Reinstall the game (it needs internet) to get it back.")
+    _pl_title=$(quote_sq "$GAME_NAME_SAFE")
+    # The build's name without the architecture, to keep the notification's text short
+    _pl_ver=${ZOOM_PROTONPATH##*/}
+    _pl_note=$(quote_sq "${_pl_ver%-x86_64} removed. Reinstall the game.")
+    # The message goes to the terminal, which nobody sees when the game is started from the
+    # applications menu, so it is also shown on the desktop. Not every distro has the same
+    # tools (Pop!_OS has no notify-send), so the first of these that works is used:
+    # notify-send, then gdbus and dbus-send (both talk to the notification service
+    # directly), then kdialog (KDE) and zenity (GTK), which only pop up a window. zenity
+    # goes to the background so it doesn't hold up the game. Notifications get the game's
+    # name as the title and a text short enough to read whole, since GNOME shows one line of
+    # about 40 characters and its pop-up is gone after a few seconds. Only zenity, a window
+    # of its own, shows the full message.
+    printf '%s\n' \
+        "# This game is pinned to a tested Proton build. If that folder was removed, umu's own" \
+        "# Proton is used instead. Nothing is downloaded here." \
+        "if [ -f '$ZOOM_PROTONPATH/toolmanifest.vdf' ]; then" \
+        "    export PROTONPATH='$ZOOM_PROTONPATH'" \
+        "else" \
+        "    msg='$_pl_msg'" \
+        "    title='$_pl_title'" \
+        "    note='$_pl_note'" \
+        "    printf '%s\\n' \"\$msg\" >&2" \
+        "    { command -v notify-send > /dev/null 2>&1 && notify-send \"\$title\" \"\$note\" > /dev/null 2>&1; } ||" \
+        "    { command -v gdbus > /dev/null 2>&1 && gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.freedesktop.Notifications.Notify zoom-platform 0 '' \"\$title\" \"\$note\" '[]' '{}' 15000 > /dev/null 2>&1; } ||" \
+        "    { command -v dbus-send > /dev/null 2>&1 && dbus-send --session --dest=org.freedesktop.Notifications --type=method_call /org/freedesktop/Notifications org.freedesktop.Notifications.Notify string:zoom-platform uint32:0 string: \"string:\$title\" \"string:\$note\" array:string: dict:string:string: int32:15000 > /dev/null 2>&1; } ||" \
+        "    { command -v kdialog > /dev/null 2>&1 && kdialog --title \"\$title\" --passivepopup \"\$note\" 15 > /dev/null 2>&1; } ||" \
+        "    { command -v zenity > /dev/null 2>&1 && zenity --warning --title=\"\$title\" --no-wrap --timeout=20 --text=\"\$(printf '%s' \"\$msg\" | fold -s -w 70)\" > /dev/null 2>&1 & }" \
+        "fi"
 }
 
 # Writes a launch script and, unless desktop entries are off, its menu entry.
@@ -1180,12 +1406,16 @@ make_launcher() {
     _ml_wmclass=$7
     _ml_shortcut=$8
 
+    # Empty unless the game is pinned to a Proton build, and then the script is unchanged
+    _ml_pin=$(pinned_proton_launch_lines)
+    _ml_nl='
+'
     cat >"$ZOOM_SHORTCUTS_PATH/$_ml_filename.sh" <<EOL
 #!/bin/sh
 export GAMEID="$UMU_ID"
 export WINEPREFIX="$INSTALL_PATH"
 export STORE="zoomplatform"
-$(umu_launch_command) start /b /d "$_ml_workingdir" "$_ml_exe" $_ml_args
+${_ml_pin:+$_ml_pin$_ml_nl}$(umu_launch_command) start /b /d "$_ml_workingdir" "$_ml_exe" $_ml_args
 EOL
     chmod +x "$ZOOM_SHORTCUTS_PATH/$_ml_filename.sh"
     LAUNCHERS_MADE=$((LAUNCHERS_MADE+1))
@@ -1571,6 +1801,7 @@ Options:
   -i, --installer      Path to a ZOOM Platform installer .exe.
   -d, --dest           Path to where you want the game to install to.
   -o, --output         Alias for -d.
+  -g, --guid INSTALLER Print the game ID (GUID) of an installer and exit. Installs nothing.
 
 Arguments:
   INSTALLER            Path to a ZOOM Platform installer .exe.
@@ -1579,6 +1810,7 @@ Arguments:
 Examples:
   zoom-platform-darth.sh "Game-English-Setup-1.33.7.exe" ~/Games/new_game_dir
   zoom-platform-darth.sh -i "Game-English-Setup-1.33.7.exe" -d ~/Games/new_game_dir
+  zoom-platform-darth.sh --guid "Game-English-Setup-1.33.7.exe"
 
 Note:
   - INSTALLER and DEST are optional if your environment can use KDialog or Zenity.
@@ -1594,8 +1826,9 @@ Source & issues: %s
 
 INPUT_INSTALLER=""
 INSTALL_PATH=""
+GUID_INSTALLER=""
 
-options=$(getopt -o hvi:d:o: --long help,version,installer:,dest:,output: -n 'zoom-platform-darth.sh' -- "$@")
+options=$(getopt -o hvi:d:o:g: --long help,version,installer:,dest:,output:,guid: -n 'zoom-platform-darth.sh' -- "$@")
 
 eval set -- "$options"
 
@@ -1615,6 +1848,10 @@ while true; do
         ;;
     -d | --dest | -o | --output )
         INSTALL_PATH="$2"
+        shift 2
+        ;;
+    -g | --guid )
+        GUID_INSTALLER="$2"
         shift 2
         ;;
     --) shift; break ;;
@@ -1638,6 +1875,23 @@ if [ -s "$INNOEXT_BIN" ]; then
     $INNOEXT_BIN --version > /dev/null 2>&1 || fatal_error "Cannot launch $INNOEXT_BIN"
 else
     fatal_error "Could not decode base64." "Error unpacking innoextract"
+fi
+
+# --guid: print the installer's game ID and stop. This is for naming a game-fixes file, so
+# it runs before anything else is set up (no umu, no network, nothing written), prints only
+# the ID on stdout, in the lowercase the file name uses, and keeps errors to stderr
+if [ -n "$GUID_INSTALLER" ]; then
+    if [ ! -r "$GUID_INSTALLER" ]; then
+        log_error "Can't read \"$GUID_INSTALLER\"."
+        exit 1
+    fi
+    _guid=$($INNOEXT_BIN -s --zoom-game-id "$GUID_INSTALLER" 2> /dev/null | trim_string)
+    if ! validate_uuid "$_guid"; then
+        log_error "\"$GUID_INSTALLER\" doesn't seem to be a ZOOM Platform installer."
+        exit 1
+    fi
+    printf '%s\n' "$_guid" | tr '[:upper:]' '[:lower:]'
+    exit 0
 fi
 
 # Check if UMU is installed
@@ -1795,6 +2049,11 @@ elif [ -d "$INSTALL_PATH" ] && [ -n "$(ls -A "$INSTALL_PATH")" ]; then
     fatal_error "Install directory must either be empty or an existing wine prefix if updating a game."
 fi
 
+# The game's fixes file may pin a Proton build, which has to be settled before the first
+# umu call: that call makes the prefix, and a prefix should stay on one build
+load_game_fixes # optional, sets GAME_FIXES and the pinned Proton
+ensure_pinned_proton # sets ZOOM_PROTONPATH, and PROTONPATH, only when the game is pinned
+
 # Write Inno inf to C drive
 # This hides some stuff the user shouldn't change
 mkdir -p "$INSTALL_PATH/drive_c"
@@ -1928,7 +2187,6 @@ GAME_NAME_SAFE=$(get_header_val 'default_group_name')
 PROTON_SHORTCUTS_PATH="$INSTALL_PATH/drive_c/proton_shortcuts"
 APPLICATIONS_PATH="$APPLICATIONS_ROOT/$GAME_NAME_SAFE"
 ZOOM_SHORTCUTS_PATH="$INSTALL_PATH/drive_c/zoom_shortcuts"
-load_game_fixes # optional, sets GAME_FIXES
 log_info "Creating desktop entries..."
 mkdir -p "$ZOOM_SHORTCUTS_PATH"
 ensure_proton_shortcuts # waits for wine to create the shortcuts and fills in any it missed
@@ -1960,8 +2218,22 @@ for file in "$PROTON_SHORTCUTS_PATH"/*.desktop; do
     # Skip certain shortcuts
     is_skipped_shortcut "$_wmclass" "$_name" && continue
 
-    # Unescape windows path
+    # Unescape windows path. Wine 11 (GE-Proton 11) writes the whole value inside double
+    # quotes, older wine without them and with "\ " for each space; either way it's the
+    # .lnk's path with every backslash doubled twice.
+    case $_lnkpathwin in
+        \"*\")
+            _lnkpathwin=${_lnkpathwin#\"}
+            _lnkpathwin=${_lnkpathwin%\"}
+            ;;
+    esac
     _lnkpathlinux=$( (PROTON_VERB=getnativepath umu_launch "$(printf '%s' "$_lnkpathwin" | sed 's/\\\\/\\/g; s/\\ / /g; s/\\\([^\\]\)/\1/g')") 2> /dev/null | head -n 1)
+    # Without the .lnk there is nothing to make a launcher from, and an empty one that
+    # starts nothing is worse than none
+    if [ ! -f "$_lnkpathlinux" ]; then
+        log_error "Couldn't read the shortcut \"$_shortcut_name\" ($_lnkpathwin), so it won't get a launcher."
+        continue
+    fi
     # A DLC can have a shortcut with the same name as one of the base game's (both share the
     # same proton_shortcuts/<name>.desktop, launch script and menu entry name).
     # If it launches the same thing there's nothing to add. If it launches something else,

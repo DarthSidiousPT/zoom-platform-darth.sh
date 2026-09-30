@@ -11,4 +11,4 @@
 7. Use LOTS of comments! Scripts are already hard to read especially when it's a bunch of pipes chained together, comments save time trying to figure out what something does.
 8. Everything must be as POSIX compliant as you can get it. It's okay to deviate from this within reason.
 9. Stick to using tools commonly installed by default on most distros, use fallbacks where appropriate.
-10. Final script must be functional when piped into `sh` (e.g. `cat zoom-platform.sh | sh`). An example of something you can't do is using `"$0"` to get the script name.
+10. Final script must be functional when piped into `sh` (e.g. `cat zoom-platform-darth.sh | sh`). An example of something you can't do is using `"$0"` to get the script name.

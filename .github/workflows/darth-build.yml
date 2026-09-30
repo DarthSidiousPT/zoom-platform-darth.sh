@@ -1,6 +1,6 @@
 name: Build (Darth fork)
 
-# Fork-only build: produces a renamed zoom-platform-darth.sh on every push to this fork's
+# Fork-only build: produces zoom-platform-darth.sh on every push to this fork's
 # main. Whenever the VERSION file's own content (e.g. "v1.2.0-darth" - an independent
 # version string, not derived from ZOOM's own version numbers) hasn't been released yet,
 # it also publishes it as a permanent GitHub Release tagged and titled with that string,
@@ -55,7 +55,6 @@ jobs:
           chmod +x dist.sh
           chmod +x build.sh
           ./dist.sh "${{ steps.ver.outputs.version }}"
-          cp zoom-platform.sh zoom-platform-darth.sh
 
       - uses: actions/upload-artifact@v4
         with:

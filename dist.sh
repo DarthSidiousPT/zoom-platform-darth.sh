@@ -2,7 +2,7 @@
 set -e
 
 cd "$(dirname "$0")"
-FINAL_FILE="zoom-platform.sh"
+FINAL_FILE="zoom-platform-darth.sh"
 # Optional: force a specific version string instead of build.sh's own auto-detection
 # (git tag at HEAD, else git-<sha>). Used by the Darth-fork CI workflow, which needs
 # an unambiguous version even when several git tags point at the same commit.
