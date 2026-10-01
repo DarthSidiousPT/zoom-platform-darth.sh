@@ -569,8 +569,16 @@
 
         <div class="card">
           <h3>Big games split into parts</h3>
-          <p>For installers split across several <code>.bin</code> files, every part is checked for before the
-            install starts, not partway through.</p>
+          <p>For installers split across several <code>.bin</code> files, the script looks over the parts before
+            installing. It tells you which one to rename if your browser changed its name, and warns about a part
+            that is missing or cut short.</p>
+        </div>
+
+        <div class="card">
+          <h3>A specific GE-Proton version per game</h3>
+          <p>A few games only work properly on a certain GE-Proton version, so their fix file names it. The script
+            downloads it once while installing and the game starts offline after that. Other games keep umu's default
+            Proton.</p>
         </div>
       </div>
     </section>
