@@ -25,5 +25,7 @@ curl -fsSL -o innoextract-upx.tar.gz "$INNOEXTRACT_URL"
 tar -xzf innoextract-upx.tar.gz
 rm innoextract-upx.tar.gz
 chmod +x innoextract-upx
+# src.sh in DEV mode (run directly, not built) reads ./innoextract, not the -upx name
+cp innoextract-upx innoextract
 
 ./build.sh "src.sh" "innoextract-upx" "$FORCED_VERSION" > "$FINAL_FILE"
