@@ -890,6 +890,9 @@ get_lnk_name() {
 # installer is killed it may still be running, or it may never have run at all: setups
 # that export WINEDLLOVERRIDES="winemenubuilder.exe=d" (Lutris-style ones do) disable it.
 # Without this step that means no launchers and no error.
+# Wine's own pass also rarely finishes: its winemenubuilder waits for the installer process
+# to exit, and killing the installer takes it down too. So step 2 below is the normal
+# path, not a fallback, and it isn't announced to the user.
 #
 # 1. Any default-verb umu launch runs "wineserver -w" first (Proton's waitforexitandrun),
 #    which waits for every process in the prefix, background winemenubuilders included.
@@ -989,7 +992,6 @@ EOL
 
     [ -n "$_sc_missing" ] || return 0
 
-    log_info "Wine didn't create every shortcut, creating the missing ones..."
     printf '=== winemenubuilder for shortcuts wine did not create:\n%s' "$_sc_missing" >> "$_sc_log"
     # Proton hides wine's own messages unless PROTON_LOG is set, and then writes them to a
     # steam-*.log of their own. Turn that on for this call only, so that when winemenubuilder
