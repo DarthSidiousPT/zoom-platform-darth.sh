@@ -1,3 +1,4 @@
-`uninstall.sh` now shows a clear title, previews what it's about to delete, and reports what happened to each item, instead of closing silently.
-
-A missing `.bin` file in a split installer is now a warning instead of a hard stop: Setup can ask for it by name during install.
+- `zoom-platform-darth.sh` can now run a game on a specific GE-Proton version. The game's fix file (`game-fixes/<GUID>.ini`) names it, and the script downloads it once (checked against a checksum) and uses it for that game. Kaan - Barbarian's Blade uses this, in `game-fixes/b14602fa-fe8e-48e9-a249-aca0ad164bab.ini`, to get its videos working. Starting such a game works offline. If the GE-Proton folder gets deleted, the game starts on the default Proton and shows a notification.
+- `zoom-platform-darth.sh` has a new `--guid` (or `-g`) option. Give it a game's installer, like `--guid "Installer.exe"`, and it prints the game's ID, the one its fix file is named after.
+- `zoom-platform-darth.sh` now makes shortcuts correctly with Wine 11 (GE-Proton 11), which writes their paths in quotes. A shortcut that can't be read now gives a clear error instead of an empty launcher.
+- `game-fixes/README.md` is now a step-by-step guide for writing game fixes, and `game-fixes/GAMES.md` lists known issues for the games that have a fix.
