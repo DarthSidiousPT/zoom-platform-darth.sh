@@ -186,6 +186,73 @@ trim_string() {
     awk '{$1=$1;print}'
 }
 
+# ZOOM GUID listed for an Inno AppId in game-fixes/known-guids.ini, for installers that carry no
+# ZOOM game ID. Returns 0 found, 1 not listed, 2 couldn't get the list. ZOOM_KNOWN_GUIDS_FILE
+# reads a local file instead.
+fetch_known_guid() {
+    _kg_appid=$1
+    _kg_file="$CACHE_DIR/known-guids.ini"
+    if [ -n "${ZOOM_KNOWN_GUIDS_FILE:-}" ]; then
+        _kg_file=$ZOOM_KNOWN_GUIDS_FILE
+        [ -r "$_kg_file" ] || return 2
+    else
+        rm -f "$_kg_file"
+        # Not even a 404 is fine: the file always exists on main
+        _kg_code=$(curl -Ls --max-time 15 -o "$_kg_file" -w '%{http_code}' \
+            -H "User-Agent: $HTTP_USER_AGENT" "$GAME_FIXES_URL/known-guids.ini")
+        _kg_exit=$?
+        if [ $_kg_exit -ne 0 ] || [ "$_kg_code" != 200 ]; then
+            rm -f "$_kg_file"
+            return 2
+        fi
+    fi
+    # The file comes off the network, so the value must be a UUID to be used
+    _kg_guid=$(awk -v id="$(printf '%s' "$_kg_appid" | tr '[:upper:]' '[:lower:]')" '
+        { sub(/\r$/, ""); sub(/[ \t]*[#;].*/, "") }
+        NF == 0 { next }
+        {
+            split($0, kv, "=")
+            gsub(/[ \t]/, "", kv[1]); gsub(/[ \t]/, "", kv[2])
+            if (tolower(kv[1]) == id) { print tolower(kv[2]); exit }
+        }
+    ' "$_kg_file")
+    validate_uuid "$_kg_guid" || return 1
+    printf '%s\n' "$_kg_guid"
+}
+
+# Sets GAME_GUID and GAME_GUID_FROM for an installer: "installer" (its own Site GUID), "list"
+# (known-guids.ini, for old installers without one), "appid" (the Inno AppId, when the list has
+# no entry) or "offline" (no Site GUID and the list couldn't be fetched, GAME_GUID empty).
+# Returns 1 when it isn't a ZOOM installer.
+resolve_game_guid() {
+    _rg_installer=$1
+    GAME_GUID=''
+    GAME_GUID_FROM=''
+    _rg_out=$($INNOEXT_BIN -s --zoom-game-id "$_rg_installer" 2> /dev/null | trim_string)
+    if validate_uuid "$_rg_out"; then
+        GAME_GUID=$_rg_out
+        GAME_GUID_FROM=installer
+        return 0
+    fi
+    # Nothing at all: no ZOOM key in the installer
+    [ -n "$_rg_out" ] || return 1
+
+    # A ZOOM key without a Site GUID (older installers): the Inno AppId is all that identifies it.
+    # get_header_val doesn't exist yet at this point
+    _rg_appid=$($INNOEXT_BIN -s --print-headers "$_rg_installer" 2> /dev/null \
+        | sed -n 's/^app_id: "\(.*\)"/\1/p' | sed 's/[{}]//g' | trim_string)
+    validate_uuid "$_rg_appid" || return 1
+    _rg_appid=$(printf '%s' "$_rg_appid" | tr '[:upper:]' '[:lower:]')
+
+    _rg_listed=$(fetch_known_guid "$_rg_appid")
+    case $? in
+        0) GAME_GUID=$_rg_listed; GAME_GUID_FROM=list ;;
+        1) GAME_GUID=$_rg_appid; GAME_GUID_FROM=appid ;;
+        *) GAME_GUID_FROM=offline ;;
+    esac
+    return 0
+}
+
 # Escapes ' as '\'' for a single-quoted literal, so values baked into uninstall.sh can't break it
 quote_sq() {
     printf '%s' "$1" | sed "s/'/'\\\\''/g"
@@ -526,10 +593,12 @@ get_prefix_reg_val() {
     printf '%s\n' "$_res" # the line break is required for while read
 }
 
-# Check if wine prefix has a specific zoom game installed
+# Check if wine prefix has a specific zoom game installed. $3 (optional): the installer's Inno
+# AppId, because old installers never write a Site GUID; Inno's uninstall key is the only trace
 prefix_has_game() {
     _wine_prefix="$1"
     _guid="$2"
+    _appid="${3:-}"
 
     if ! is_valid_prefix "$_wine_prefix"; then
         return 1
@@ -544,6 +613,14 @@ prefix_has_game() {
             fi
         done < "$_tmp"
         rm -f "$_tmp"
+        if [ $_r -ne 0 ] && [ -n "$_appid" ] && [ -r "$_wine_prefix/system.reg" ] &&
+            awk -v id="$_appid" '
+                BEGIN { want = tolower("\\Uninstall\\\\{" id "}_is1]") }
+                index(tolower($0), want) { found = 1; exit }
+                END { exit !found }
+            ' "$_wine_prefix/system.reg"; then
+            _r=0
+        fi
         return $_r
     fi
 }
@@ -1717,18 +1794,27 @@ else
 fi
 
 # --guid: print the installer's game ID (lowercase, as fix files are named) and stop, before
-# umu, network or any writes. Only the ID goes to stdout.
+# umu or any writes. The network is used only for an installer that has no ZOOM game ID. Only
+# the ID goes to stdout.
 if [ -n "$GUID_INSTALLER" ]; then
     if [ ! -r "$GUID_INSTALLER" ]; then
         log_error "Can't read \"$GUID_INSTALLER\"."
         exit 1
     fi
-    _guid=$($INNOEXT_BIN -s --zoom-game-id "$GUID_INSTALLER" 2> /dev/null | trim_string)
-    if ! validate_uuid "$_guid"; then
+    if ! resolve_game_guid "$GUID_INSTALLER"; then
         log_error "\"$GUID_INSTALLER\" doesn't seem to be a ZOOM Platform installer."
         exit 1
     fi
-    printf '%s\n' "$_guid" | tr '[:upper:]' '[:lower:]'
+    case $GAME_GUID_FROM in
+        offline)
+            log_error "\"$GUID_INSTALLER\" has no ZOOM Platform game ID inside, and the list of known ones couldn't be downloaded. Check the connection and try again."
+            exit 1
+            ;;
+        appid)
+            log_warning "\"$GUID_INSTALLER\" has no ZOOM Platform game ID inside and isn't in the list of known ones, so its Inno Setup AppId is printed. Please report the game: $REPO_PATH/issues"
+            ;;
+    esac
+    printf '%s\n' "$GAME_GUID" | tr '[:upper:]' '[:lower:]'
     exit 0
 fi
 
@@ -1779,14 +1865,20 @@ if ! test_file_perms r "$INPUT_INSTALLER" ; then
 fi
 
 # Validate and get some info from installer
-ZOOM_GUID=$($INNOEXT_BIN -s --zoom-game-id "$INPUT_INSTALLER" 2> /dev/null | trim_string)
-ZOOM_GUID_EXIT=$?
-# GUID can be wrong for very old installers, make sure it's a valid string
-if [ $ZOOM_GUID_EXIT -gt 0 ] || ! validate_uuid "$ZOOM_GUID"; then
+if ! resolve_game_guid "$INPUT_INSTALLER"; then
     fatal_error "This doesn't seem to be a ZOOM Platform installer.
 If you think this is an error, please submit a bug report:
 $REPO_PATH/issues" "Invalid ZOOM Platform Installer"
 fi
+# Empty only when an old installer has no ZOOM game ID and the list couldn't be fetched; the
+# prefix may still know it (see below)
+ZOOM_GUID=$GAME_GUID
+case $GAME_GUID_FROM in
+    list)
+        log_info "This installer has no ZOOM Platform game ID inside, using the one listed for it: $ZOOM_GUID";;
+    appid)
+        log_warning "This installer has no ZOOM Platform game ID inside and isn't in the list of known ones, so its Inno Setup AppId is used instead. The game installs fine, but umu can't tell which game it is. Please report it: $REPO_PATH/issues";;
+esac
 
 INSTALLER_INFO=$($INNOEXT_BIN -s --print-headers "$INPUT_INSTALLER")
 get_header_val () {
@@ -1811,7 +1903,7 @@ IS DLC: \033[39;49;1m%s\033[0m
 "$(get_header_val 'app_name')" \
 "$(get_header_val 'app_publisher')" \
 "$(get_header_val 'app_version')" \
-"$ZOOM_GUID" \
+"${ZOOM_GUID:-unknown (no connection)}" \
 "$([ "$IS_DLC" -eq 1 ] && printf "yes" || printf "no")"
 
 # Split installers: make sure all the .bin files are there before anything is touched
@@ -1857,12 +1949,27 @@ fi
 export WINEPREFIX="$INSTALL_PATH"
 export GAMEID="zoominstall"
 
+# An installer with no ZOOM game ID: the prefix remembers the ID its first install used, so a
+# reinstall or DLC keeps it even offline (or if the list changes)
+if [ "$GAME_GUID_FROM" != installer ]; then
+    _zg_marker="$INSTALL_PATH/drive_c/zoom_guid"
+    _zg_saved=''
+    [ -f "$_zg_marker" ] && { read -r _zg_saved < "$_zg_marker" || :; }
+    if validate_uuid "$_zg_saved"; then
+        [ "$_zg_saved" = "$ZOOM_GUID" ] || log_info "Using the game ID saved in this prefix: $_zg_saved"
+        ZOOM_GUID=$_zg_saved
+    fi
+    if [ -z "$ZOOM_GUID" ]; then
+        fatal_error "This installer has no ZOOM Platform game ID inside, so it needs an internet connection to find out which game it is. Check the connection and try again." "No connection"
+    fi
+fi
+
 # Safety checks: the destination must be empty, or an existing wine prefix holding the same
 # game (update) or, for DLC, some ZOOM game. A DLC installer checks itself that it's the
 # right game.
 if is_valid_prefix "$INSTALL_PATH"; then
     # Same game is installed on this prefix, must be updating or reinstalling
-    if prefix_has_game "$INSTALL_PATH" "$ZOOM_GUID"; then
+    if prefix_has_game "$INSTALL_PATH" "$ZOOM_GUID" "$INNO_APPID"; then
         log_info "Detected the same game installed in this prefix! [$ZOOM_GUID]"
     else
         if prefix_has_any_game "$INSTALL_PATH"; then
@@ -1888,6 +1995,7 @@ ensure_pinned_proton # sets ZOOM_PROTONPATH, and PROTONPATH, only when the game 
 
 # Inno inf: hides the pages the user shouldn't change
 mkdir -p "$INSTALL_PATH/drive_c"
+[ "$GAME_GUID_FROM" = installer ] || printf '%s\n' "$ZOOM_GUID" > "$INSTALL_PATH/drive_c/zoom_guid"
 cat >"$INSTALL_PATH/drive_c/zoom_installer.inf" <<EOL
 [Setup]
 Lang=english
@@ -1902,7 +2010,7 @@ EOL
 # Windows shortcuts.
 
 # Not needed for a DLC or an already installed game.
-if [ $IS_DLC -eq 0 ] && ! prefix_has_game "$INSTALL_PATH" "$ZOOM_GUID"; then
+if [ $IS_DLC -eq 0 ] && ! prefix_has_game "$INSTALL_PATH" "$ZOOM_GUID" "$INNO_APPID"; then
     cat >"$INSTALL_PATH/drive_c/zoom_regkeys.bat" <<EOL
 @echo off
 REM We do a check cause we don't want to overwrite in case of an update that changes the default installation directory.

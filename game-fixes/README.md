@@ -40,19 +40,64 @@ file is named after it, so you need to find it first. The script can read it fro
    sh zoom-platform-darth.sh --guid "Kaan-Barbarian's-Blade-English-Setup-1.1.1.exe"
    ```
 
-   It prints the GUID and nothing else. It installs nothing, and it doesn't need a network connection:
+   It prints the GUID and nothing else. It installs nothing, and for almost every game it doesn't need a network connection:
 
    ```
    b14602fa-fe8e-48e9-a249-aca0ad164bab
    ```
 
    If it says the file doesn't seem to be a ZOOM Platform installer, the file you gave it isn't a game installer.
+   If it prints a warning about a missing game ID instead, see [Games with no ZOOM game ID](#games-with-no-zoom-game-id).
    `-g` does the same as `--guid`. The option was added after `v1.3.3-darth`, so an older script doesn't have it.
 3. Add `.ini` at the end. That is the name of your file, and it goes in the `game-fixes/` folder:
    `game-fixes/b14602fa-fe8e-48e9-a249-aca0ad164bab.ini`. The GUID is already printed in lowercase, which is what the
    name needs.
 
 The script also prints the GUID at the start of every install, on the line that says `ZOOM Platform UUID`.
+
+## Games with no ZOOM game ID
+
+A few older installers, like Renoir and POSTAL 1, don't have the game's ID inside them, so the script can't read it.
+For those it looks the game up in [known-guids.ini](known-guids.ini), a short list in this folder. Each line says which
+ZOOM GUID belongs to which installer. The list is only read for these installers, and it is downloaded when needed, so
+these games need a network connection to install. `--guid` needs one too.
+
+### What you will see
+
+- **The game is on the list.** The install says `using the one listed for it` and carries on. There is nothing to do.
+  A fix file for the game is named after that listed GUID, like any other.
+- **The game isn't on the list yet.** The script warns you and uses the installer's own ID instead (the Inno Setup
+  AppId, a code like `54f346df-1f81-49bd-8755-6b09d8f3f012`). The game still installs and plays. The only loss is that
+  umu can't tell which game it is, so it can't give it its own settings. `--guid` prints the AppId, and a fix file
+  for the game has to be named after it until the game is added to the list.
+- **No network.** The script stops and says it couldn't download the list. Connect and run it again.
+
+### Adding a game to the list
+
+1. Run `sh zoom-platform-darth.sh --guid "Game-Setup.exe"`. For a game that isn't listed, it prints a warning and
+   then the AppId.
+2. Find the game's real ZOOM GUID in the
+   [umu-database](https://github.com/Open-Wine-Components/umu-database/blob/main/umu-database.csv). Look for the game's
+   title in the file. In the row for it, the second column says `zoomplatform` and the third is the GUID.
+3. Add one line to `known-guids.ini`, with the AppId first, then the GUID, then a note after the `#`:
+
+   ```ini
+   54f346df-1f81-49bd-8755-6b09d8f3f012 = 2bba4b65-cd80-4b06-95db-8c87009f4bff  # Renoir, installer 1.0, umu-database
+   ```
+
+4. Check it. Run `--guid` again with `ZOOM_KNOWN_GUIDS_FILE` pointing at your edited file. It should print the real GUID
+   now and no warning:
+
+   ```sh
+   ZOOM_KNOWN_GUIDS_FILE=./known-guids.ini sh zoom-platform-darth.sh --guid "Game-Setup.exe"
+   ```
+
+Then send it to us in one of two ways:
+
+- **Open a pull request** with your new line in `known-guids.ini`. This is the quickest way.
+- **Or open a [GitHub issue](https://github.com/DarthSidiousPT/zoom-platform-darth.sh/issues)** if you'd rather not edit the
+  file. Write the game's name, the installer's file name, and the AppId that `--guid` printed. If the game isn't in the
+  umu-database either, say so. We'll look for the GUID and add it.
 
 ## Part 1: replacing a shortcut
 

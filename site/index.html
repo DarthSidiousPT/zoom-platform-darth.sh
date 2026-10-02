@@ -558,7 +558,14 @@
 
         <div class="card">
           <h3>Newer installers</h3>
-          <p>Supports games packaged with Inno Setup 6.3 and newer, thanks to an updated innoextract build.</p>
+          <p>Supports games packaged with Inno Setup 6.3 and newer, thanks to an updated <code>innoextract</code> build.</p>
+        </div>
+
+        <div class="card">
+          <h3>Older installers</h3>
+          <p>Some older ZOOM installers, like <i>Renoir</i> and <i>Postal</i>, don't have their game's ID inside, and
+            the official script refuses them. This fork looks the game up in a short list and installs it like any
+            other.</p>
         </div>
 
         <div class="card">
@@ -576,7 +583,7 @@
 
         <div class="card">
           <h3>A specific GE-Proton version per game</h3>
-          <p>A few games only work properly on a certain GE-Proton version, so their fix file names it. The script
+          <p>A few games only work properly on a certain <i>GE-Proton</i> version, so their fix file names it. The script
             downloads it once while installing and the game starts offline after that. Other games keep umu's default
             Proton.</p>
         </div>
@@ -610,8 +617,9 @@
         <div class="card">
           <h3>Where do I submit a fix?</h3>
           <p>General Proton fixes go to <a
-              href="https://github.com/Open-Wine-Components/umu-protonfixes">umu-protonfixes</a>. A broken launcher
-            specific to this script can go in this repo's
+              href="https://github.com/Open-Wine-Components/umu-protonfixes">umu-protonfixes</a>. A broken launcher, a game that
+            needs a specific <i>GE-Proton</i> version, or an old installer missing from the short list can go in this
+            repo's
             <a href="https://github.com/DarthSidiousPT/zoom-platform-darth.sh/blob/main/game-fixes/README.md">game-fixes</a>
             folder.</p>
         </div>
