@@ -161,7 +161,7 @@ Install the game again with `ZOOM_GAME_FIXES_FILE` set, and look in the output f
 ### When you need it
 
 The game installs and starts, but something is wrong that umu's default Proton doesn't handle. Kaan's intro and
-cutscenes show as coloured static, for example. If the same game works on GE-Proton, a fix file can tell the script to use that exact GE-Proton version, and that fixes
+cutscenes show colour bars, for example. If the same game works on GE-Proton, a fix file can tell the script to use that exact GE-Proton version, and that fixes
 it for everyone.
 
 The three values you will need:

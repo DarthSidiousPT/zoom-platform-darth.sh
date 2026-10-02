@@ -37,7 +37,7 @@ Some big games (such as Necro Vision) come as one `.exe` plus `-1.bin`, `-2.bin`
 
 ### Games that need a specific Proton
 
-A few games only work properly on a certain GE-Proton version (Kaan's videos show as static on umu's default one, for example). For those, the game's fix file names the version. The script downloads it once while installing (about 500 MB, checked against a checksum) and uses it for that game. After that the game starts offline. If the GE-Proton folder ever gets deleted, the game falls back to the default Proton and shows a notification. Games without a fix file are untouched. See [which games have one](game-fixes/GAMES.md).
+A few games only work properly on a certain GE-Proton version (Kaan's videos show colour bars on umu's default one, for example). For those, the game's fix file names the version. The script downloads it once while installing (about 500 MB, checked against a checksum) and uses it for that game. After that the game starts offline. If the GE-Proton folder ever gets deleted, the game falls back to the default Proton and shows a notification. Games without a fix file are untouched. See [which games have one](game-fixes/GAMES.md).
 
 ### Finding a game's ID
 

@@ -553,7 +553,7 @@
         <div class="card">
           <h3>Clean install and detailed uninstall</h3>
           <p>Each install only creates its own shortcuts. Uninstalling previews what it's about to remove, then
-            reports what happened to each item: Desktop links, menu entries and launch scripts included.</p>
+            displays what happened to each item: Desktop links, menu entries and launch scripts included.</p>
         </div>
 
         <div class="card">
@@ -563,7 +563,7 @@
 
         <div class="card">
           <h3>Older installers</h3>
-          <p>Some older ZOOM installers, like <i>Renoir</i> and <i>Postal</i>, don't have their game's ID inside, and
+          <p>Some older ZOOM installers, like <i>Renoir</i> and <i>Postal</i>, don't have their game's ID inside them, and
             the official script refuses them. This fork looks the game up in a short list and installs it like any
             other.</p>
         </div>
@@ -583,9 +583,10 @@
 
         <div class="card">
           <h3>A specific GE-Proton version per game</h3>
-          <p>A few games only work properly on a certain <i>GE-Proton</i> version, so their fix file names it. The script
-            downloads it once while installing and the game starts offline after that. Other games keep umu's default
-            Proton.</p>
+          <p>A few games only work properly on a certain <i>GE-Proton</i> version, for example when their intros and videos
+            show colour bars, like a TV test pattern, instead of the picture on umu's default Proton. The script
+            downloads that version once while installing, and the game starts offline after that. Other games keep
+            umu's default Proton.</p>
         </div>
       </div>
     </section>
@@ -603,13 +604,15 @@
         </div>
 
         <div class="card">
-          <h3>Do I need Steam installed?</h3>
-          <p>No. OWC forked parts of the Steam Linux Runtime and Proton so they work without Steam.</p>
+          <h3>Does this project use AI?</h3>
+          <p>Yes! AI is used to debug, quickly explain and write most of the code in this fork, but it's strictly controlled. It isn't
+            vibe coded per se (except for this web page).</p>
+          <p>If you don't feel comfortable with this, you can use the <i>official</i> one.</p>
         </div>
 
         <div class="card">
           <h3>Does every ZOOM game work?</h3>
-          <p>ZOOM tested their most popular games and submitted fixes for many of them; some work out of the box,
+          <p>We believe ZOOM tests their most popular games and submits fixes for many of them. Some work out of the box,
             some may not work at all. Feel free to submit fixes to
             <a href="https://github.com/Open-Wine-Components/umu-protonfixes">umu-protonfixes</a>.</p>
         </div>
@@ -626,14 +629,19 @@
 
         <div class="card">
           <h3>Can I launch games through Steam?</h3>
-          <p>Depending on your distro, use Steam's "Add a Non-Steam Game..." and pick it from the list, or
+          <p>Depending on your distro, use Steam's "Add a Non-Steam Game..." and pick the game from the list, or
             right-click the desktop entry and choose "Add to Steam".</p>
         </div>
 
         <div class="card">
           <h3>I want the official one!</h3>
-          <p>That's ZOOM Platform's own script, <a href="https://zoom-platform.sh/">zoom-platform.sh</a>, at
+          <p>That's ZOOM Platform's own script, <a href="https://zoom-platform.sh/">zoom-platform.sh</a>, installed with
             <code>curl zoom-platform.sh | sh</code>.</p>
+        </div>
+
+        <div class="card">
+          <h3>Do I need Steam installed?</h3>
+          <p>No. OWC forked parts of the Steam Linux Runtime and Proton so they work without Steam.</p>
         </div>
 
         <div class="card">
@@ -656,7 +664,7 @@
       <a href="https://www.zoom-platform.com/">ZOOM Platform</a>
     </div>
     <p class="credits">Tux by Larry Ewing (lewing@isc.tamu.edu) and The GIMP, recoloured as pixel art for this
-      page. "3270 Condensed" font under the 3270font license.</p>
+      page. "3270 Condensed" font under the 3270font licence.</p>
   </footer>
 
   <script>
