@@ -1199,7 +1199,7 @@ download_pinned_proton() {
         return 1
     fi
 
-    log_info "Pinned Proton: downloading $_dp_asset (about 500 MB, only needed the first time)..."
+    log_info "Pinned Proton: downloading $_dp_asset (only needed the first time)..."
     rm -f "$_dp_file"
     # --fail so an error page isn't saved as the tarball; the speed limit gives up on a stalled
     # connection (there's no overall time limit on a big download)
