@@ -1,3 +1,4 @@
-- `zoom-platform-darth.sh` no longer prints "Wine didn't create every shortcut, creating the missing ones..." on every install. Wine's own shortcut builder almost never finishes before the installer is closed, so that step is the normal path. The launchers are made the same as before, a shortcut that really fails is still reported by name, and the details stay in `zoom_menubuilder.log`.
-- `zoom-platform-darth.sh` has shorter comments. Nothing it does has changed.
-- `dist.sh` now also leaves a copy of innoextract as `./innoextract`, which is the file `src.sh` reads when you run it directly.
+- `zoom-platform-darth.sh` now installs older ZOOM installers that don't have the game's ID inside, like Renoir and Postal, and probably several other games. The official script doesn't recognize them and shows "doesn't seem to be a ZOOM Platform installer".
+- `zoom-platform-darth.sh` also needs an internet connection for those _broken_ installers, just to read that list, and `--guid` does the same. If the game isn't listed there (it has to be added to it manually), the install still goes ahead with the installer's own ID, and you will get a warning asking you to report the game here.
+- `game-fixes/known-guids.ini` **is** the _database_ for games with these broken installers, with Renoir and Postal in it (for now). To add another one, check `game-fixes/README.md` for how to do it by pull request or by opening an issue.
+- `game-fixes/` has a fix for Renoir, whose videos don't play on umu's default Proton. It runs on a specific GE-Proton version instead.
