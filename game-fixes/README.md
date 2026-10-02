@@ -255,6 +255,8 @@ asset name isn't worked out from the tag because GloriousEggroll's naming change
   checksum matched. If that folder is already there, the script uses it as it is and skips the download.
 - The install and every launcher of the game use that build. The prefix remembers which one in `drive_c/zoom_proton`, so a
   DLC or a reinstall stays on the same build even when the DLC has no file of its own.
+- When the script downloads the build, it leaves a small file called `.zoom-platform-downloaded` inside the folder. A folder that was
+  already there (from ProtonUp-Qt, for example) gets none.
 - If the build can't be had (offline, wrong checksum), the install goes on with umu's own Proton and says so.
 
 ### What happens when you start the game
@@ -264,7 +266,21 @@ like ProtonUp-Qt and ProtonPlus can delete that folder without knowing a game us
 umu's own Proton instead, and the script tells you, in the terminal and in a desktop notification ("GE-Proton11-7
 removed. Reinstall the game."). Reinstalling the game brings the folder back, and that one does need internet. Which
 tool shows the notification depends on the distro: `notify-send`, `gdbus`, `dbus-send`, `kdialog` or `zenity`, the first
-one that works. The uninstaller never removes the build, since other games may use it.
+one that works. Uninstalling can remove the build, see below.
+
+### Getting the disk space back
+
+Games can end up on different GE-Proton versions, and each one stays on disk after its game is gone. Only builds that have
+the `.zoom-platform-downloaded` file are ever removed, and only when no installed game uses them:
+
+- `uninstall.sh` lists the build in its preview and removes it with the game, after you answer `y`.
+- `zoom-platform-darth.sh --remove-unused-proton` lists every unused build (for example the old one after a fix file moved
+  a game to a newer version and you reinstalled it) and asks before removing anything.
+
+A build is kept if another game uses it, if Steam's `config.vdf` mentions it, or if it has no note file. A game whose
+launcher points to a drive that isn't mounted stops all removals, because that game might need any of them. Versions
+downloaded by older releases have no note file, so delete those by hand from `~/.local/share/Steam/compatibilitytools.d/`
+or with ProtonUp-Qt.
 
 ### Warnings and what they mean
 

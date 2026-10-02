@@ -27,7 +27,7 @@
 | <img src="https://api.iconify.design/ph/wrench-duotone.svg?color=%232f81f7&height=20" height="20" alt="">          | Games whose own launcher fails            | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=18" height="18" alt="Works"> [Fixed launchers for some games](game-fixes/GAMES.md) | <img src="https://api.iconify.design/ph/x-circle-fill.svg?color=%23cf222e&height=18" height="18" alt="Fails"> No game fixes, only the game's own shortcut               |
 | <img src="https://api.iconify.design/ph/gear-six-duotone.svg?color=%232f81f7&height=20" height="20" alt=""> | Games that need a different Proton | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=18" height="18" alt="Works"> [A specific GE-Proton version for some games](game-fixes/GAMES.md) | <img src="https://api.iconify.design/ph/warning-circle-fill.svg?color=%23d4a72c&height=18" height="18" alt="Partial"> Always umu's default Proton |
 | <img src="https://api.iconify.design/ph/clock-counter-clockwise-duotone.svg?color=%232f81f7&height=20" height="20" alt=""> | Older installers with no game ID | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=18" height="18" alt="Works"> [Looks the game up in a short list](game-fixes/README.md#games-with-no-zoom-game-id) | <img src="https://api.iconify.design/ph/x-circle-fill.svg?color=%23cf222e&height=18" height="18" alt="Fails"> Refuses them as "not a ZOOM Platform installer" |
-| <img src="https://api.iconify.design/ph/trash-duotone.svg?color=%232f81f7&height=20" height="20" alt="">           | Uninstall                                 | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=18" height="18" alt="Works"> Previews what it'll remove, reports the result | <img src="https://api.iconify.design/ph/x-circle-fill.svg?color=%23cf222e&height=18" height="18" alt="Fails"> Leaves Desktop links and launch scripts, no output           |
+| <img src="https://api.iconify.design/ph/trash-duotone.svg?color=%232f81f7&height=20" height="20" alt="">           | Uninstall                                 | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=18" height="18" alt="Works"> Previews what it'll remove, reports the result, also removes a GE-Proton version no other game uses | <img src="https://api.iconify.design/ph/x-circle-fill.svg?color=%23cf222e&height=18" height="18" alt="Fails"> Leaves Desktop links and launch scripts, no output           |
 
 <sub>Official script = the [v1.0.1 release](https://github.com/ZOOM-Platform/zoom-platform.sh/releases/tag/v1.0.1) that `curl zoom-platform.sh` serves, checked September 2026. Some of these are already fixed in its unreleased development code.</sub>
 
@@ -37,7 +37,7 @@ Some big games (such as Necro Vision) come as one `.exe` plus `-1.bin`, `-2.bin`
 
 ### Games that need a specific Proton
 
-A few games only work properly on a certain GE-Proton version (Kaan's videos show colour bars on umu's default one, for example). For those, the game's fix file names the version. The script downloads it once while installing (about 500 MB, checked against a checksum) and uses it for that game. After that the game starts offline. If the GE-Proton folder ever gets deleted, the game falls back to the default Proton and shows a notification. Games without a fix file are untouched. See [which games have one](game-fixes/GAMES.md).
+A few games only work properly on a certain GE-Proton version (Kaan's videos show colour bars on umu's default one, for example). For those, the game's fix file names the version. The script downloads it once while installing (checked against a checksum) and uses it for that game. After that the game starts offline. If the GE-Proton folder ever gets deleted, the game falls back to the default Proton and shows a notification. Games without a fix file are untouched. See [which games have one](game-fixes/GAMES.md).
 
 ### Finding a game's ID
 
@@ -46,6 +46,19 @@ Fix files are named after the game's ID. `-g` (or `--guid`) prints it for an ins
 zoom-platform-darth.sh --guid "Game-English-Setup-1.33.7.exe"
 ```
 [game-fixes/README.md](game-fixes/README.md) shows how to write a fix file.
+
+### Freeing disk space
+
+Each specific GE-Proton version takes a lot of disk space. Uninstalling a game removes its version too, unless another game
+still uses it, so usually there's nothing to do. A version can still get left behind, for example when a fix file moved a game
+to a newer one and you reinstalled it. To clear those:
+```
+zoom-platform-darth.sh --remove-unused-proton
+```
+It lists what it found and asks before removing anything. Only versions this script downloaded are removed. Ones you
+installed yourself with ProtonUp-Qt or Steam are never touched, and neither are versions downloaded by older releases of
+this script (delete those by hand from `~/.local/share/Steam/compatibilitytools.d/`). If you installed with the curl
+one-liner, see [Usage](#usage) for how to run it.
 
 ---
 
@@ -78,6 +91,11 @@ curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- -h
 Same for the game ID option:
 ```
 curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- --guid "Game-English-Setup-1.33.7.exe"
+```
+
+And for removing GE-Proton versions that no game uses (it asks for your answer on the terminal, so it works piped too):
+```
+curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- --remove-unused-proton
 ```
 
 ## Contributing

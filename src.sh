@@ -24,6 +24,8 @@ UMU_BIN=umu-run
 CACHE_DIR="$HOME"/.cache/zoom-platform
 # Where umu looks for Proton builds; a game's pinned build is unpacked here
 PROTON_COMPAT_DIR="$HOME"/.local/share/Steam/compatibilitytools.d
+# File inside a build's folder, written when this script downloaded it. Also baked into uninstall.sh
+PROTON_NOTE=.zoom-platform-downloaded
 PROTON_GE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download"
 # The pinned Proton build's folder, empty when the game isn't pinned (umu then picks its own)
 ZOOM_PROTONPATH=''
@@ -1227,6 +1229,9 @@ download_pinned_proton() {
         return 1
     fi
     rm -f "$_dp_file"
+    # Marks the build as ours, so the cleanup never touches a copy someone else installed
+    # (ProtonUp-Qt, a Steam game). Written before the mv: the note and the folder appear together.
+    printf '%s\n' "Downloaded by zoom-platform-darth.sh $INSTALLER_VERSION" > "$_dp_tmp/$_dp_name/$PROTON_NOTE"
 
     # Another install may have finished this build meanwhile, then use its copy. mv would put
     # ours inside an existing folder, so remove that if the race happens.
@@ -1292,6 +1297,61 @@ ensure_pinned_proton() {
     mkdir -p "$INSTALL_PATH/drive_c"
     printf '%s %s\n' "$_pp_name" "$_pp_sha" > "$_pp_marker"
     log_info "Pinned Proton: this game runs on $_pp_name"
+}
+
+# Prints the GE-Proton builds that this script downloaded (they hold the $PROTON_NOTE file) and
+# that no game needs any more, one folder name per line. $1: a prefix to leave out, the one
+# being uninstalled. A build is kept when a ZOOM game's prefix names it in drive_c/zoom_proton,
+# or when Steam's config.vdf mentions it (read only; the shared folder may hold a Steam game's
+# build). A launcher link that leads nowhere may be a game on a disk that isn't mounted and
+# could need any build, so then nothing is printed. Same text in uninstall.sh: keep them equal.
+find_unused_protons() {
+    # Physical path, so a trailing slash or a symlink in the path still matches
+    _fu_skip=''
+    if [ -n "$1" ]; then
+        _fu_skip=$(cd "$1" 2> /dev/null && pwd -P)
+    fi
+    _fu_used=''
+    for _fu_link in "$LAUNCH_SCRIPTS_PATH"/*/*.sh; do
+        [ -L "$_fu_link" ] || continue
+        _fu_target=$(readlink "$_fu_link")
+        _fu_prefix=${_fu_target%/drive_c/zoom_shortcuts/*}
+        if [ -n "$_fu_skip" ] && [ "$(cd "$_fu_prefix" 2> /dev/null && pwd -P)" = "$_fu_skip" ]; then
+            continue
+        fi
+        if [ "$_fu_prefix" = "$_fu_target" ] || [ ! -e "$_fu_target" ]; then
+            return 0
+        fi
+        if [ -f "$_fu_prefix/drive_c/zoom_proton" ]; then
+            _fu_name=$(head -n 1 "$_fu_prefix/drive_c/zoom_proton" | cut -d ' ' -f1)
+            _fu_used="$_fu_used $_fu_name"
+        fi
+    done
+
+    _fu_vdf=${PROTON_COMPAT_DIR%/compatibilitytools.d}/config/config.vdf
+    for _fu_dir in "$PROTON_COMPAT_DIR"/GE-Proton*; do
+        if [ -L "$_fu_dir" ] || [ ! -f "$_fu_dir/$PROTON_NOTE" ]; then
+            continue
+        fi
+        _fu_name=${_fu_dir##*/}
+        case $_fu_name in
+            *[!A-Za-z0-9._+-]*) continue ;;
+        esac
+        case "$_fu_used " in
+            *" $_fu_name "*) continue ;;
+        esac
+        if [ -f "$_fu_vdf" ]; then
+            # The tool's internal name, the first quoted word after compat_tools
+            _fu_int=$(awk '/"compat_tools"/ {f = 1; next} f && match($0, /"[^"]+"/) {print substr($0, RSTART + 1, RLENGTH - 2); exit}' "$_fu_dir/compatibilitytool.vdf" 2> /dev/null)
+            if grep -F -q "\"$_fu_name\"" "$_fu_vdf" 2> /dev/null; then
+                continue
+            fi
+            if [ -n "$_fu_int" ] && grep -F -q "\"$_fu_int\"" "$_fu_vdf" 2> /dev/null; then
+                continue
+            fi
+        fi
+        printf '%s\n' "$_fu_name"
+    done
 }
 
 # Prints the launch script lines for a pinned game (nothing otherwise). The folder is shared
@@ -1474,6 +1534,8 @@ EOL
         printf "APPLICATIONS_ROOT='%s'\n" "$(quote_sq "$APPLICATIONS_ROOT")"
         printf "WINE_MENU_ROOT='%s'\n" "$(quote_sq "$WINE_MENU_ROOT")"
         printf "LAUNCH_SCRIPTS_PATH='%s'\n" "$(quote_sq "$LAUNCH_SCRIPTS_PATH")"
+        printf "PROTON_COMPAT_DIR='%s'\n" "$(quote_sq "$PROTON_COMPAT_DIR")"
+        printf "PROTON_NOTE='%s'\n" "$(quote_sq "$PROTON_NOTE")"
         printf "ZOOM_GUID='%s'\n" "$(quote_sq "$ZOOM_GUID")"
         printf "INSTALL_PATH='%s'\n" "$(quote_sq "$INSTALL_PATH")"
         # Everything below is static, so the heredoc is quoted
@@ -1529,6 +1591,61 @@ wait_for_key() {
     stty "$_wfk_tty" 2>/dev/null
     trap - INT TERM
     printf '\n'
+}
+
+# Prints the GE-Proton builds that this script downloaded (they hold the $PROTON_NOTE file) and
+# that no game needs any more, one folder name per line. $1: a prefix to leave out, the one
+# being uninstalled. A build is kept when a ZOOM game's prefix names it in drive_c/zoom_proton,
+# or when Steam's config.vdf mentions it (read only; the shared folder may hold a Steam game's
+# build). A launcher link that leads nowhere may be a game on a disk that isn't mounted and
+# could need any build, so then nothing is printed. Same text in uninstall.sh: keep them equal.
+find_unused_protons() {
+    # Physical path, so a trailing slash or a symlink in the path still matches
+    _fu_skip=''
+    if [ -n "$1" ]; then
+        _fu_skip=$(cd "$1" 2> /dev/null && pwd -P)
+    fi
+    _fu_used=''
+    for _fu_link in "$LAUNCH_SCRIPTS_PATH"/*/*.sh; do
+        [ -L "$_fu_link" ] || continue
+        _fu_target=$(readlink "$_fu_link")
+        _fu_prefix=${_fu_target%/drive_c/zoom_shortcuts/*}
+        if [ -n "$_fu_skip" ] && [ "$(cd "$_fu_prefix" 2> /dev/null && pwd -P)" = "$_fu_skip" ]; then
+            continue
+        fi
+        if [ "$_fu_prefix" = "$_fu_target" ] || [ ! -e "$_fu_target" ]; then
+            return 0
+        fi
+        if [ -f "$_fu_prefix/drive_c/zoom_proton" ]; then
+            _fu_name=$(head -n 1 "$_fu_prefix/drive_c/zoom_proton" | cut -d ' ' -f1)
+            _fu_used="$_fu_used $_fu_name"
+        fi
+    done
+
+    _fu_vdf=${PROTON_COMPAT_DIR%/compatibilitytools.d}/config/config.vdf
+    for _fu_dir in "$PROTON_COMPAT_DIR"/GE-Proton*; do
+        if [ -L "$_fu_dir" ] || [ ! -f "$_fu_dir/$PROTON_NOTE" ]; then
+            continue
+        fi
+        _fu_name=${_fu_dir##*/}
+        case $_fu_name in
+            *[!A-Za-z0-9._+-]*) continue ;;
+        esac
+        case "$_fu_used " in
+            *" $_fu_name "*) continue ;;
+        esac
+        if [ -f "$_fu_vdf" ]; then
+            # The tool's internal name, the first quoted word after compat_tools
+            _fu_int=$(awk '/"compat_tools"/ {f = 1; next} f && match($0, /"[^"]+"/) {print substr($0, RSTART + 1, RLENGTH - 2); exit}' "$_fu_dir/compatibilitytool.vdf" 2> /dev/null)
+            if grep -F -q "\"$_fu_name\"" "$_fu_vdf" 2> /dev/null; then
+                continue
+            fi
+            if [ -n "$_fu_int" ] && grep -F -q "\"$_fu_int\"" "$_fu_vdf" 2> /dev/null; then
+                continue
+            fi
+        fi
+        printf '%s\n' "$_fu_name"
+    done
 }
 
 if [ -n "$GAME_TITLE" ]; then
@@ -1608,6 +1725,22 @@ if [ -d "$LAUNCH_SCRIPTS_PATH/$ZOOM_GUID" ]; then
 "
 fi
 
+# The GE-Proton build this game runs on goes too, but only when this script downloaded it and no
+# other game needs it
+_proton_name=''
+if [ -f "$INSTALL_PATH/drive_c/zoom_proton" ]; then
+    _pn=$(head -n 1 "$INSTALL_PATH/drive_c/zoom_proton" | cut -d ' ' -f1)
+    _unused=$(find_unused_protons "$INSTALL_PATH" | tr '\n' ' ')
+    case " $_unused" in
+        *" $_pn "*) [ -n "$_pn" ] && _proton_name=$_pn ;;
+    esac
+fi
+if [ -n "$_proton_name" ]; then
+    _du_kb=$(du -sk "$PROTON_COMPAT_DIR/$_proton_name" 2>/dev/null | cut -f1)
+    _preview="$_preview$(printf '  %-17s%s (%s MB, no other game uses it)' 'GE-Proton build' "$(show_path "$PROTON_COMPAT_DIR/$_proton_name")" "$(( ${_du_kb:-0} / 1024 ))")
+"
+fi
+
 if [ -z "$_preview" ]; then
     printf 'Nothing left to remove.\n'
     wait_for_key
@@ -1684,6 +1817,15 @@ if [ -e "$INSTALL_PATH" ]; then
     fi
 fi
 
+if [ -n "$_proton_name" ] && [ -d "$PROTON_COMPAT_DIR/$_proton_name" ]; then
+    rm -rf "${PROTON_COMPAT_DIR:?}/$_proton_name" 2>/dev/null
+    if [ -e "$PROTON_COMPAT_DIR/$_proton_name" ]; then
+        say_failed "$PROTON_COMPAT_DIR/$_proton_name"
+    else
+        say_removed "$PROTON_COMPAT_DIR/$_proton_name"
+    fi
+fi
+
 # Remove the now empty parents. Fails harmlessly while other games are installed.
 rmdir "$APPLICATIONS_ROOT" "$LAUNCH_SCRIPTS_PATH" 2>/dev/null
 
@@ -1719,6 +1861,9 @@ Options:
   -d, --dest           Path to where you want the game to install to.
   -o, --output         Alias for -d.
   -g, --guid INSTALLER Print the game ID (GUID) of an installer and exit. Installs nothing.
+      --remove-unused-proton
+                       Remove the GE-Proton versions this script downloaded that no
+                       installed game uses any more, then exit. Asks first.
 
 Arguments:
   INSTALLER            Path to a ZOOM Platform installer .exe.
@@ -1728,6 +1873,7 @@ Examples:
   zoom-platform-darth.sh "Game-English-Setup-1.33.7.exe" ~/Games/new_game_dir
   zoom-platform-darth.sh -i "Game-English-Setup-1.33.7.exe" -d ~/Games/new_game_dir
   zoom-platform-darth.sh --guid "Game-English-Setup-1.33.7.exe"
+  zoom-platform-darth.sh --remove-unused-proton
 
 Note:
   - INSTALLER and DEST are optional if your environment can use KDialog or Zenity.
@@ -1744,8 +1890,9 @@ Source & issues: %s
 INPUT_INSTALLER=""
 INSTALL_PATH=""
 GUID_INSTALLER=""
+REMOVE_UNUSED_PROTON=0
 
-options=$(getopt -o hvi:d:o:g: --long help,version,installer:,dest:,output:,guid: -n 'zoom-platform-darth.sh' -- "$@")
+options=$(getopt -o hvi:d:o:g: --long help,version,installer:,dest:,output:,guid:,remove-unused-proton -n 'zoom-platform-darth.sh' -- "$@")
 
 eval set -- "$options"
 
@@ -1771,6 +1918,10 @@ while true; do
         GUID_INSTALLER="$2"
         shift 2
         ;;
+    --remove-unused-proton )
+        REMOVE_UNUSED_PROTON=1
+        shift
+        ;;
     --) shift; break ;;
     *)
         fatal_error "Invalid option: $1"
@@ -1781,6 +1932,47 @@ done
 [ -z "$INPUT_INSTALLER" ] && INPUT_INSTALLER=$1
 
 [ -z "$INSTALL_PATH" ] && INSTALL_PATH=$2
+
+# --remove-unused-proton: lists the GE-Proton builds nothing needs any more and removes them after
+# a y/N. Needs no innoextract, umu or network. Terminal only, so errors are log_error + exit 1.
+if [ "$REMOVE_UNUSED_PROTON" -eq 1 ]; then
+    _rp_list=$(find_unused_protons '')
+    if [ -z "$_rp_list" ]; then
+        log_info "No GE-Proton version to remove: none that this script downloaded is unused."
+        exit 0
+    fi
+    printf 'These GE-Proton versions were downloaded by this script and no game uses them:\n'
+    while IFS= read -r _rp_name; do
+        _rp_kb=$(du -sk "$PROTON_COMPAT_DIR/$_rp_name" 2> /dev/null | cut -f1)
+        printf '  %s (%s MB)\n' "$PROTON_COMPAT_DIR/$_rp_name" "$(( ${_rp_kb:-0} / 1024 ))"
+    done <<EOL
+$_rp_list
+EOL
+    # The terminal itself, so this also works when the script is piped into sh
+    printf 'Remove them? [y/N] '
+    _rp_in=''
+    read -r _rp_in < /dev/tty || :
+    case $_rp_in in
+        [yY] | [yY][eE][sS]) ;;
+        *)
+            printf 'Cancelled, nothing was removed.\n'
+            exit 0
+            ;;
+    esac
+    _rp_failed=0
+    while IFS= read -r _rp_name; do
+        rm -rf "${PROTON_COMPAT_DIR:?}/$_rp_name" 2> /dev/null
+        if [ -e "$PROTON_COMPAT_DIR/$_rp_name" ]; then
+            log_error "Couldn't remove $PROTON_COMPAT_DIR/$_rp_name"
+            _rp_failed=1
+        else
+            log_info "Removed $PROTON_COMPAT_DIR/$_rp_name"
+        fi
+    done <<EOL
+$_rp_list
+EOL
+    exit $_rp_failed
+fi
 
 # Unpack innoextract into tmp
 base64_dec "$(get_innoext_string)" > $INNOEXT_BIN
