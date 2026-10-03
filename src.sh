@@ -1764,9 +1764,12 @@ if [ -f "$INSTALL_PATH/drive_c/zoom_proton" ]; then
     esac
 fi
 _proton_mb=0
+_proton_label=$_proton_name
 if [ -n "$_proton_name" ]; then
     _du_kb=$(du -sk "$PROTON_COMPAT_DIR/$_proton_name" 2>/dev/null | cut -f1)
     _proton_mb=$(( ${_du_kb:-0} / 1024 ))
+    # Without the architecture, to read better: GE-Proton11-7
+    _proton_label=${_proton_name%-x86_64}
 fi
 
 if [ -z "$_preview" ]; then
@@ -1781,11 +1784,11 @@ printf '\n'
 [ "$_savegames_needed" -eq 1 ] && printf 'Save games stored inside the install folder are deleted too.\n'
 if [ -n "$_proton_name" ]; then
     if [ "$_opt_remove_proton" -eq 1 ]; then
-        printf 'Its GE-Proton version (%s MB) will be removed too.\n' "$_proton_mb"
+        printf '%s (%s MB) will be removed too, since no other game uses it.\n' "$_proton_label" "$_proton_mb"
     elif [ "$_opt_yes" -eq 1 ]; then
-        printf 'Its GE-Proton version is kept.\n'
+        printf '%s (%s MB) is kept. Add --remove-unused-proton to remove it too.\n' "$_proton_label" "$_proton_mb"
     else
-        printf 'The GE-Proton version this game uses is asked about separately.\n'
+        printf 'You will be asked separately about %s (%s MB), which no other game uses.\n' "$_proton_label" "$_proton_mb"
     fi
 fi
 if [ "$_opt_yes" -eq 1 ]; then
@@ -1814,8 +1817,8 @@ if [ -n "$_proton_name" ]; then
     elif [ "$_opt_yes" -eq 1 ]; then
         _keep_why='kept, add --remove-unused-proton to remove it'
     else
-        printf '%s (%s MB) was downloaded by this script and no other game uses it.\n' "$_proton_name" "$_proton_mb"
-        printf 'Remove it too? [y/N] '
+        printf 'No other game uses %s, and this script downloaded it.\n' "$_proton_label"
+        printf 'Remove the remaining %s (%s MB)? [y/N] ' "$_proton_label" "$_proton_mb"
         _in=''
         read -r _in || :
         case $_in in
