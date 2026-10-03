@@ -55,10 +55,26 @@ left behind, for example when a fix file moved a game to a newer one and you rei
 ```
 zoom-platform-darth.sh --remove-unused-proton
 ```
-It lists what it found and asks before removing anything. Only versions this script downloaded are removed. Ones you
-installed yourself with ProtonUp-Qt or Steam are never touched, and neither are versions downloaded by older releases of
-this script (delete those by hand from `~/.local/share/Steam/compatibilitytools.d/`). If you installed with the curl
-one-liner, see [Usage](#usage) for how to run it.
+It lists what it found and asks before removing anything. In a script or a cron job, add `--yes` (or `-y`) and it removes
+them without asking:
+```
+zoom-platform-darth.sh --remove-unused-proton --yes
+```
+Only versions this script downloaded are removed. Ones you installed yourself with ProtonUp-Qt or Steam are never touched,
+and neither are versions downloaded by older releases of this script (delete those by hand from
+`~/.local/share/Steam/compatibilitytools.d/`). If you installed with the curl one-liner, see [Usage](#usage) for how to run
+it.
+
+Each game's `uninstall.sh` takes two options too, to skip its questions:
+- `-y` (or `--yes`) removes the game without asking and keeps its GE-Proton version.
+- `--remove-unused-proton` also removes that version without asking, as long as no other game uses it.
+
+Together they remove everything with no questions:
+```
+sh ~/Games/MyGame/uninstall.sh -y --remove-unused-proton
+```
+`--remove-unused-proton` on its own still asks about the game. If another game uses the version, or this script didn't
+download it, the option does nothing for it and the result says it was kept.
 
 ---
 
@@ -93,9 +109,13 @@ Same for the game ID option:
 curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- --guid "Game-English-Setup-1.33.7.exe"
 ```
 
-And for removing GE-Proton versions that no game uses (it asks for your answer on the terminal, so it works piped too):
+And for removing GE-Proton versions that no game uses (it asks on the terminal, so piped input can't answer it):
 ```
 curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- --remove-unused-proton
+```
+With `--yes` it doesn't ask, which also works without a terminal:
+```
+curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- --remove-unused-proton --yes
 ```
 
 ## Contributing

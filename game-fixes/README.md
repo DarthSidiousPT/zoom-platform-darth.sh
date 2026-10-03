@@ -276,7 +276,13 @@ the `.zoom-platform-downloaded` file are ever removed, and only when no installe
 - `uninstall.sh` asks if you want to remove the build too, after you confirmed removing the game. It's a separate question and
   the default is no, so you can remove the game and keep the build.
 - `zoom-platform-darth.sh --remove-unused-proton` lists every unused build (for example the old one after a fix file moved
-  a game to a newer version and you reinstalled it) and asks before removing anything.
+  a game to a newer version and you reinstalled it) and asks before removing anything. Add `--yes` (or `-y`) to skip the
+  question, for a script or a cron job. It reads the answer from the terminal, so piped input can't answer it.
+
+To skip `uninstall.sh`'s questions, pass `-y` (or `--yes`) to remove the game and keep its build, and
+`--remove-unused-proton` to also remove the build. `sh uninstall.sh -y --remove-unused-proton` removes everything with no
+questions, and `--remove-unused-proton` on its own still asks about the game. If another game uses the build, or this
+script didn't download it, the option does nothing for it and the result says it was kept.
 
 A build is kept if another game uses it, if Steam's `config.vdf` mentions it, or if it has no note file. A game whose
 launcher points to a drive that isn't mounted stops all removals, because that game might need any of them. Versions

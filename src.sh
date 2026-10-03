@@ -1540,6 +1540,33 @@ EOL
         printf "INSTALL_PATH='%s'\n" "$(quote_sq "$INSTALL_PATH")"
         # Everything below is static, so the heredoc is quoted
         cat <<'EOL'
+uninstall_usage() {
+    printf 'Usage: sh uninstall.sh [-y | --yes] [--remove-unused-proton]\n\n'
+    printf '  -y, --yes                Remove the game without asking. Its GE-Proton version is kept\n'
+    printf '                           unless --remove-unused-proton is also given.\n'
+    printf '  --remove-unused-proton   Also remove the GE-Proton version this game uses, without\n'
+    printf '                           asking, when no other game uses it.\n'
+    printf '  -h, --help               Show this help.\n'
+}
+
+_opt_yes=0
+_opt_remove_proton=0
+for _arg in "$@"; do
+    case $_arg in
+        -y | --yes) _opt_yes=1 ;;
+        --remove-unused-proton) _opt_remove_proton=1 ;;
+        -h | --help)
+            uninstall_usage
+            exit 0
+            ;;
+        *)
+            printf 'Unknown option: %s\n\n' "$_arg" >&2
+            uninstall_usage >&2
+            exit 2
+            ;;
+    esac
+done
+
 cd / 2>/dev/null || true
 
 # Colours only on a terminal, unless NO_COLOR is set
@@ -1728,6 +1755,7 @@ fi
 # The GE-Proton build this game runs on is offered separately (after the game's own y/N), but
 # only when this script downloaded it and no other game needs it
 _proton_name=''
+_pn=''
 if [ -f "$INSTALL_PATH/drive_c/zoom_proton" ]; then
     _pn=$(head -n 1 "$INSTALL_PATH/drive_c/zoom_proton" | cut -d ' ' -f1)
     _unused=$(find_unused_protons "$INSTALL_PATH" | tr '\n' ' ')
@@ -1751,31 +1779,50 @@ printf 'This will delete:\n'
 printf '%s' "$_preview"
 printf '\n'
 [ "$_savegames_needed" -eq 1 ] && printf 'Save games stored inside the install folder are deleted too.\n'
-[ -n "$_proton_name" ] && printf 'The GE-Proton version this game uses is asked about separately.\n'
-printf 'Continue? [y/N] '
-read -r _in
-case $_in in
-    [yY] | [yY][eE][sS]) ;;
-    *)
-        printf 'Cancelled, nothing was removed.\n'
-        wait_for_key
-        exit 0
-        ;;
-esac
+if [ -n "$_proton_name" ]; then
+    if [ "$_opt_remove_proton" -eq 1 ]; then
+        printf 'Its GE-Proton version (%s MB) will be removed too.\n' "$_proton_mb"
+    elif [ "$_opt_yes" -eq 1 ]; then
+        printf 'Its GE-Proton version is kept.\n'
+    else
+        printf 'The GE-Proton version this game uses is asked about separately.\n'
+    fi
+fi
+if [ "$_opt_yes" -eq 1 ]; then
+    printf 'Continue? [y/N] y (--yes)\n'
+else
+    printf 'Continue? [y/N] '
+    read -r _in
+    case $_in in
+        [yY] | [yY][eE][sS]) ;;
+        *)
+            printf 'Cancelled, nothing was removed.\n'
+            wait_for_key
+            exit 0
+            ;;
+    esac
+fi
 printf '\n'
 
 # Its own question, so the build can stay while the game goes. Anything but y, or no answer at
 # all (piped input that ran out), keeps it.
 _remove_proton=0
+_keep_why='you chose to keep it'
 if [ -n "$_proton_name" ]; then
-    printf '%s (%s MB) was downloaded by this script and no other game uses it.\n' "$_proton_name" "$_proton_mb"
-    printf 'Remove it too? [y/N] '
-    _in=''
-    read -r _in || :
-    case $_in in
-        [yY] | [yY][eE][sS]) _remove_proton=1 ;;
-    esac
-    printf '\n'
+    if [ "$_opt_remove_proton" -eq 1 ]; then
+        _remove_proton=1
+    elif [ "$_opt_yes" -eq 1 ]; then
+        _keep_why='kept, add --remove-unused-proton to remove it'
+    else
+        printf '%s (%s MB) was downloaded by this script and no other game uses it.\n' "$_proton_name" "$_proton_mb"
+        printf 'Remove it too? [y/N] '
+        _in=''
+        read -r _in || :
+        case $_in in
+            [yY] | [yY][eE][sS]) _remove_proton=1 ;;
+        esac
+        printf '\n'
+    fi
 fi
 
 while IFS= read -r _group; do
@@ -1841,7 +1888,14 @@ if [ -n "$_proton_name" ] && [ -d "$PROTON_COMPAT_DIR/$_proton_name" ]; then
             say_removed "$PROTON_COMPAT_DIR/$_proton_name"
         fi
     else
-        say_kept "$PROTON_COMPAT_DIR/$_proton_name" "you chose to keep it"
+        say_kept "$PROTON_COMPAT_DIR/$_proton_name" "$_keep_why"
+    fi
+elif [ "$_opt_remove_proton" -eq 1 ]; then
+    # Asked for, but the rules say it stays: say so, or it would look like the option was ignored
+    if [ -n "$_pn" ] && [ -d "$PROTON_COMPAT_DIR/$_pn" ]; then
+        say_kept "$PROTON_COMPAT_DIR/$_pn" "still used by another game, or not downloaded by this script"
+    else
+        printf '  No GE-Proton version to remove for this game.\n'
     fi
 fi
 
@@ -1883,6 +1937,7 @@ Options:
       --remove-unused-proton
                        Remove the GE-Proton versions this script downloaded that no
                        installed game uses any more, then exit. Asks first.
+  -y, --yes            With --remove-unused-proton: do not ask, just remove them.
 
 Arguments:
   INSTALLER            Path to a ZOOM Platform installer .exe.
@@ -1893,6 +1948,7 @@ Examples:
   zoom-platform-darth.sh -i "Game-English-Setup-1.33.7.exe" -d ~/Games/new_game_dir
   zoom-platform-darth.sh --guid "Game-English-Setup-1.33.7.exe"
   zoom-platform-darth.sh --remove-unused-proton
+  zoom-platform-darth.sh --remove-unused-proton --yes
 
 Note:
   - INSTALLER and DEST are optional if your environment can use KDialog or Zenity.
@@ -1910,8 +1966,9 @@ INPUT_INSTALLER=""
 INSTALL_PATH=""
 GUID_INSTALLER=""
 REMOVE_UNUSED_PROTON=0
+ASSUME_YES=0
 
-options=$(getopt -o hvi:d:o:g: --long help,version,installer:,dest:,output:,guid:,remove-unused-proton -n 'zoom-platform-darth.sh' -- "$@")
+options=$(getopt -o hvi:d:o:g:y --long help,version,installer:,dest:,output:,guid:,remove-unused-proton,yes -n 'zoom-platform-darth.sh' -- "$@")
 
 eval set -- "$options"
 
@@ -1941,6 +1998,10 @@ while true; do
         REMOVE_UNUSED_PROTON=1
         shift
         ;;
+    -y | --yes )
+        ASSUME_YES=1
+        shift
+        ;;
     --) shift; break ;;
     *)
         fatal_error "Invalid option: $1"
@@ -1953,7 +2014,9 @@ done
 [ -z "$INSTALL_PATH" ] && INSTALL_PATH=$2
 
 # --remove-unused-proton: lists the GE-Proton builds nothing needs any more and removes them after
-# a y/N. Needs no innoextract, umu or network. Terminal only, so errors are log_error + exit 1.
+# a y/N (--yes skips it, for scripts and cron: the question is read from the terminal itself, so
+# piped input can't answer it). Needs no innoextract, umu or network. Terminal only, so errors
+# are log_error + exit 1.
 if [ "$REMOVE_UNUSED_PROTON" -eq 1 ]; then
     _rp_list=$(find_unused_protons '')
     if [ -z "$_rp_list" ]; then
@@ -1967,17 +2030,21 @@ if [ "$REMOVE_UNUSED_PROTON" -eq 1 ]; then
     done <<EOL
 $_rp_list
 EOL
-    # The terminal itself, so this also works when the script is piped into sh
-    printf 'Remove them? [y/N] '
-    _rp_in=''
-    read -r _rp_in < /dev/tty || :
-    case $_rp_in in
-        [yY] | [yY][eE][sS]) ;;
-        *)
-            printf 'Cancelled, nothing was removed.\n'
-            exit 0
-            ;;
-    esac
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        printf 'Removing them (--yes).\n'
+    else
+        # The terminal itself, so this also works when the script is piped into sh
+        printf 'Remove them? [y/N] '
+        _rp_in=''
+        read -r _rp_in < /dev/tty || :
+        case $_rp_in in
+            [yY] | [yY][eE][sS]) ;;
+            *)
+                printf 'Cancelled, nothing was removed.\n'
+                exit 0
+                ;;
+        esac
+    fi
     _rp_failed=0
     while IFS= read -r _rp_name; do
         rm -rf "${PROTON_COMPAT_DIR:?}/$_rp_name" 2> /dev/null
