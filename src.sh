@@ -2039,7 +2039,9 @@ EOL
         # The terminal itself, so this also works when the script is piped into sh
         printf 'Remove them? [y/N] '
         _rp_in=''
-        read -r _rp_in < /dev/tty || :
+        if ! read -r _rp_in 2> /dev/null < /dev/tty; then
+            printf '\nNo terminal to ask on. Add --yes to remove them without asking.\n'
+        fi
         case $_rp_in in
             [yY] | [yY][eE][sS]) ;;
             *)
