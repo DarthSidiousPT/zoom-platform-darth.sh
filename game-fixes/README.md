@@ -273,7 +273,8 @@ one that works. Uninstalling can remove the build, see below.
 Games can end up on different GE-Proton versions, and each one stays on disk after its game is gone. Only builds that have
 the `.zoom-platform-downloaded` file are ever removed, and only when no installed game uses them:
 
-- `uninstall.sh` lists the build in its preview and removes it with the game, after you answer `y`.
+- `uninstall.sh` asks if you want to remove the build too, after you confirmed removing the game. It's a separate question and
+  the default is no, so you can remove the game and keep the build.
 - `zoom-platform-darth.sh --remove-unused-proton` lists every unused build (for example the old one after a fix file moved
   a game to a newer version and you reinstalled it) and asks before removing anything.
 

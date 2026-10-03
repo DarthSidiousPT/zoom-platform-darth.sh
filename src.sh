@@ -1725,8 +1725,8 @@ if [ -d "$LAUNCH_SCRIPTS_PATH/$ZOOM_GUID" ]; then
 "
 fi
 
-# The GE-Proton build this game runs on goes too, but only when this script downloaded it and no
-# other game needs it
+# The GE-Proton build this game runs on is offered separately (after the game's own y/N), but
+# only when this script downloaded it and no other game needs it
 _proton_name=''
 if [ -f "$INSTALL_PATH/drive_c/zoom_proton" ]; then
     _pn=$(head -n 1 "$INSTALL_PATH/drive_c/zoom_proton" | cut -d ' ' -f1)
@@ -1735,10 +1735,10 @@ if [ -f "$INSTALL_PATH/drive_c/zoom_proton" ]; then
         *" $_pn "*) [ -n "$_pn" ] && _proton_name=$_pn ;;
     esac
 fi
+_proton_mb=0
 if [ -n "$_proton_name" ]; then
     _du_kb=$(du -sk "$PROTON_COMPAT_DIR/$_proton_name" 2>/dev/null | cut -f1)
-    _preview="$_preview$(printf '  %-17s%s (%s MB, no other game uses it)' 'GE-Proton build' "$(show_path "$PROTON_COMPAT_DIR/$_proton_name")" "$(( ${_du_kb:-0} / 1024 ))")
-"
+    _proton_mb=$(( ${_du_kb:-0} / 1024 ))
 fi
 
 if [ -z "$_preview" ]; then
@@ -1751,6 +1751,7 @@ printf 'This will delete:\n'
 printf '%s' "$_preview"
 printf '\n'
 [ "$_savegames_needed" -eq 1 ] && printf 'Save games stored inside the install folder are deleted too.\n'
+[ -n "$_proton_name" ] && printf 'The GE-Proton version this game uses is asked about separately.\n'
 printf 'Continue? [y/N] '
 read -r _in
 case $_in in
@@ -1762,6 +1763,20 @@ case $_in in
         ;;
 esac
 printf '\n'
+
+# Its own question, so the build can stay while the game goes. Anything but y, or no answer at
+# all (piped input that ran out), keeps it.
+_remove_proton=0
+if [ -n "$_proton_name" ]; then
+    printf '%s (%s MB) was downloaded by this script and no other game uses it.\n' "$_proton_name" "$_proton_mb"
+    printf 'Remove it too? [y/N] '
+    _in=''
+    read -r _in || :
+    case $_in in
+        [yY] | [yY][eE][sS]) _remove_proton=1 ;;
+    esac
+    printf '\n'
+fi
 
 while IFS= read -r _group; do
     [ -n "$_group" ] || continue
@@ -1818,11 +1833,15 @@ if [ -e "$INSTALL_PATH" ]; then
 fi
 
 if [ -n "$_proton_name" ] && [ -d "$PROTON_COMPAT_DIR/$_proton_name" ]; then
-    rm -rf "${PROTON_COMPAT_DIR:?}/$_proton_name" 2>/dev/null
-    if [ -e "$PROTON_COMPAT_DIR/$_proton_name" ]; then
-        say_failed "$PROTON_COMPAT_DIR/$_proton_name"
+    if [ "$_remove_proton" -eq 1 ]; then
+        rm -rf "${PROTON_COMPAT_DIR:?}/$_proton_name" 2>/dev/null
+        if [ -e "$PROTON_COMPAT_DIR/$_proton_name" ]; then
+            say_failed "$PROTON_COMPAT_DIR/$_proton_name"
+        else
+            say_removed "$PROTON_COMPAT_DIR/$_proton_name"
+        fi
     else
-        say_removed "$PROTON_COMPAT_DIR/$_proton_name"
+        say_kept "$PROTON_COMPAT_DIR/$_proton_name" "you chose to keep it"
     fi
 fi
 
