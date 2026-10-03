@@ -65,16 +65,28 @@ and neither are versions downloaded by older releases of this script (delete tho
 `~/.local/share/Steam/compatibilitytools.d/`). If you installed with the curl one-liner, see [Usage](#usage) for how to run
 it.
 
-Each game's `uninstall.sh` takes two options too, to skip its questions:
-- `-y` (or `--yes`) removes the game without asking and keeps its GE-Proton version.
-- `--remove-unused-proton` also removes that version without asking, as long as no other game uses it.
+Each game's `uninstall.sh` sits in its install folder. Run with no options, it asks two things: whether to remove the game,
+and then, only when no other game uses its GE-Proton version, whether to remove that version too. The second question
+defaults to keeping it:
+```
+No other game uses GE-Proton<version>, and this script downloaded it.
+Remove the remaining GE-Proton<version> (<size> MB)? [y/N]
+```
+Two options skip the questions:
 
-Together they remove everything with no questions:
-```
-sh ~/Games/MyGame/uninstall.sh -y --remove-unused-proton
-```
-`--remove-unused-proton` on its own still asks about the game. If another game uses the version, or this script didn't
-download it, the option does nothing for it and the result says it was kept.
+| Command | Asks about the game | Asks about the version | Result |
+| --- | --- | --- | --- |
+| `sh ~/Games/MyGame/uninstall.sh` | yes | yes | what you answer |
+| `sh ~/Games/MyGame/uninstall.sh -y` | no | no | game removed, version kept |
+| `sh ~/Games/MyGame/uninstall.sh -y --remove-unused-proton` | no | no | game and version removed |
+| `sh ~/Games/MyGame/uninstall.sh --remove-unused-proton` | yes | no | game removed if you say yes, and the version with it |
+
+`-y` is short for `--yes`, and `-h` lists the options. An option it doesn't know stops it before anything is removed.
+
+`--remove-unused-proton` follows the same rules as the question. If another game still uses the version, or this script
+didn't download it, it does nothing for the version, the game is still uninstalled, and the result says the version was
+kept. A game with no specific GE-Proton version has nothing to remove, and it says so. If you used `-y` and want the
+version gone later, the main script's `--remove-unused-proton` above cleans it up.
 
 ---
 
@@ -97,6 +109,29 @@ The fork's own site is a static `index.html` in [site](site), deployed to GitHub
 
 ```
 curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh
+```
+
+These are the options of `zoom-platform-darth.sh`. With the curl one-liner, add them after `sh -s --`:
+
+| Option | What it does |
+| --- | --- |
+| `-i FILE`, `--installer FILE` | The ZOOM installer `.exe` to install. |
+| `-d FOLDER`, `--dest FOLDER`, `-o FOLDER`, `--output FOLDER` | Where to install the game. To update a game or add a DLC, use the folder of the base game. |
+| `-g FILE`, `--guid FILE` | Prints the game's ID and installs nothing. |
+| `--remove-unused-proton` | Lists the GE-Proton versions this script downloaded that no game uses, and removes them after asking. |
+| `-y`, `--yes` | With `--remove-unused-proton`, does not ask. Works without a terminal. |
+| `-v`, `--version` | Prints the script's version. |
+| `-h`, `--help` | Prints the help text. |
+
+The installer and the folder can also be plain arguments, and without them the script opens a file picker when zenity or
+kdialog is available:
+```
+zoom-platform-darth.sh -i "Game-English-Setup-1.33.7.exe" -d ~/Games/MyGame
+zoom-platform-darth.sh "Game-English-Setup-1.33.7.exe" ~/Games/MyGame
+```
+With the curl one-liner:
+```
+curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- -i "Game-English-Setup-1.33.7.exe" -d ~/Games/MyGame
 ```
 
 For the script's help text, `-h` has to go after `-s --` since the script is piped in:
