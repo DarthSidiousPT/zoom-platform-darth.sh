@@ -127,3 +127,13 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # Tells Bing, Yandex and the engines that use IndexNow about the new deploy. The key
+      # file is public by design (site/<key>.txt). A failed ping must never fail the deploy.
+      - name: Ping IndexNow
+        continue-on-error: true
+        env:
+          SITE: https://darthsidiouspt.github.io/zoom-platform-darth.sh/
+          INDEXNOW_KEY: 5cfa87821c7aded5291fc19ffcd64d42
+        run: |
+          curl -fsS "https://api.indexnow.org/indexnow?url=${SITE}&key=${INDEXNOW_KEY}&keyLocation=${SITE}${INDEXNOW_KEY}.txt"
