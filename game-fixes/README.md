@@ -1,9 +1,10 @@
 # Game fixes
 
-A game fix is a small text file that changes how one game is installed. It can do two things:
+A game fix is a small text file that changes how one game is installed. It can do three things:
 
 - Replace a ZOOM shortcut that doesn't work under Proton with launchers that do (Necro Vision's launcher menu is one).
 - Run the game on one specific, tested version of GE-Proton instead of umu's default Proton (Kaan needs this for its videos).
+- Set values in the game's Windows registry (e-Racer needs one, or its picture is almost black).
 
 Most games don't need a fix, so they have no file. For a plain list of the games that do, see [GAMES.md](GAMES.md).
 This page explains how to add or change a fix, step by step. You don't need to know anything about Proton to follow it.
@@ -301,6 +302,61 @@ or with ProtonUp-Qt.
 | `ignoring "proton": proton_sha512 must be 128 lowercase hex characters`         | The checksum was cut short, has a typo, or is in capitals.                                   |
 | `Pinned Proton: couldn't download ...`                                          | No network, or the tag or asset name doesn't exist on GitHub.                                |
 | `Pinned Proton: ... doesn't match the checksum in the game fixes file`          | The file on GitHub isn't the one the checksum was made from.                                 |
+| `ignoring "<registry path>": the key ... is not allowed`                        | The path goes through a key that a fix file can't write. See [Part 3](#part-3-registry-values). |
+| `ignoring "<registry path>": the path must start with HKCU\ or HKLM\`           | The path has the wrong shape. It must be `<root>\Software\<key>\<value name>`.               |
+| `ignoring "<registry path>": a dword must be a number ...`                      | The part after `=` is wrong: a `dword` takes digits only, and the type is `dword` or `sz`.   |
+
+## Part 3: Registry values
+
+### When you need it
+
+Some games read a setting from the Windows registry that their installer doesn't write. e-Racer is one: it sets a very
+dark gamma curve at startup, and Wine applies it as it is, so the 3D scene is almost black. The game has a switch
+called `NoGamma` that skips that step, but it only works when a registry value of that name exists. A fix file can set
+values like that while the game installs.
+
+### Write the values
+
+Put them in a section called `[wine registry]`. Each line is the full path of one value, then `=`, then its type and
+its data:
+
+```ini
+[wine registry]
+HKCU\Software\Rage Games Ltd\eRacer\NoGamma = dword:1
+```
+
+The last part of the path is the value's name, and everything before it is the key. There are two types:
+
+- `dword:<number>` is a number from 0 to 4294967295, written in plain decimal.
+- `sz:<text>` is text. It can't end with a backslash.
+
+Only `HKCU\Software\...` and `HKLM\Software\...` are accepted, with at least one key below `Software`. A 32-bit game
+reads its `HKLM` values from `HKLM\Software\WOW6432Node\...`, so write that path for those.
+
+A few keys are refused because they can start programs or register code: `Run`, `RunOnce`, `Winlogon`, `Classes`,
+`Policies`, `Explorer`, `App Paths`, `AeDebug`, `Command Processor` and `Image File Execution Options`. Under `Wine`,
+only `DllOverrides` is accepted. This is a best-effort list, since Wine isn't a sandbox. A refused line is skipped with
+a warning and the others still apply.
+
+`wine registry` is the one section name that isn't a launcher, so don't give a launcher that name.
+
+### What happens at install time
+
+The values are set after the installer finishes, because the installer writes the game's own key and you want yours to
+come after it. Installing a DLC or reinstalling the game sets them again, which changes nothing. Nothing touches the
+registry when the game starts.
+
+### Try it
+
+Install the game again with `ZOOM_GAME_FIXES_FILE` set. The output should include:
+
+```
+Game fixes: 1 registry value(s) for this game
+Game fixes: setting 1 registry value(s)...
+```
+
+Then look for the value in `<install folder>/user.reg` (`HKCU` values), or in `system.reg` for `HKLM` ones. e-Racer's
+file, [94c96dc7-8c5a-4c5f-ab44-a5dcf879d539.ini](94c96dc7-8c5a-4c5f-ab44-a5dcf879d539.ini), is a real one to copy from.
 
 ## Example: a game that needs both
 
@@ -346,4 +402,5 @@ The file comes off the network and ends up in a generated shell script, so every
 take letters, digits, space and `. _ ( ) + , -` only, must be relative, and can't contain `..`. Arguments take letters,
 digits, space and `+ . _ , = : / -` only. A launcher that fails a check is skipped with a warning. The Proton keys are
 held to the shapes above: the tag is `GE-Proton<N>-<N>`, the asset is the tag plus `.tar.gz` or `-x86_64.tar.gz`, and
-the checksum is 128 lowercase hex characters. A value that fails is ignored with a warning.
+the checksum is 128 lowercase hex characters. A value that fails is ignored with a warning. Registry paths take the
+same characters as launcher paths, and `sz` text also takes `: = \`. Quotes, `%`, `&` and `|` are refused.

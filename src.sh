@@ -1003,6 +1003,8 @@ EOL
 # the | separator). Keys before the first [section] apply to the whole game; the three that
 # pin a Proton build come out as one line with an empty first field:
 #   |proton|tag|asset|sha512      or      !|proton|reason
+# The [wine registry] section holds one value per line, "HKCU\Software\...\name = dword:1" or
+# "= sz:text"; each comes out as @|key|name|type|data, or !|<line>|reason.
 # $1: the file
 parse_game_fixes() {
     awk '
@@ -1029,6 +1031,50 @@ parse_game_fixes() {
             if (q ~ /^\// || q ~ /\/$/ || q ~ /\/\// || q ~ /(^|\/)[.][.](\/|$)/) return "is not a plain relative path"
             return ""
         }
+        # One line of the [registry] section: "<root>\Software\<key>\<name> = <type>:<data>". Wine is
+        # no sandbox, so this is a best-effort block list of the keys that start programs or
+        # register code. A 32-bit game reads HKLM\Software\WOW6432Node, so the file names that
+        # path itself.
+        function registry_line(line,    eq, path, spec, n, p, q, i, c, root, type, data, key, name, r) {
+            eq = index(line, "=")
+            if (eq == 0) return "!|" safe(line) "|a registry line must be: path = type:data"
+            path = trim(substr(line, 1, eq - 1))
+            spec = trim(substr(line, eq + 1))
+            r = bad_path(path)
+            if (r != "") return "!|" safe(path) "|the path " r
+            q = path
+            gsub(/\\/, "/", q) # a plain / separates the parts, as in bad_path
+            n = split(q, p, "/")
+            root = toupper(p[1])
+            if (root != "HKCU" && root != "HKLM") return "!|" safe(path) "|the path must start with HKCU\\ or HKLM\\"
+            if (n < 4 || tolower(p[2]) != "software") return "!|" safe(path) "|the path must be <root>\\Software\\<key>\\<value name>"
+            for (i = 2; i < n; i++) {
+                c = tolower(p[i])
+                if (c ~ /^(run|runonce|runonceex|runservices|runservicesonce|winlogon|classes|policies|explorer|app paths|aedebug|command processor|shell folders|user shell folders|image file execution options)$/)
+                    return "!|" safe(path) "|the key " p[i] " is not allowed"
+                # Wine at any depth (WOW6432Node\Wine too): only DllOverrides below it
+                if (c == "wine" && (tolower(p[i + 1]) != "dlloverrides" || i + 1 == n))
+                    return "!|" safe(path) "|under Wine only DllOverrides is allowed"
+            }
+            name = p[n]
+            if (tolower(name) ~ /^(appinit_dlls|loadappinit_dlls)$/) return "!|" safe(path) "|the value " name " is not allowed"
+            if (index(spec, ":") == 0) return "!|" safe(path) "|the value must be dword:<number> or sz:<text>"
+            type = substr(spec, 1, index(spec, ":") - 1)
+            data = substr(spec, index(spec, ":") + 1)
+            if (type == "dword") {
+                if (data == "" || length(data) > 10 || !only(data, "0123456789") || data + 0 > 4294967295)
+                    return "!|" safe(path) "|a dword must be a number from 0 to 4294967295"
+                data = sprintf("%.0f", data + 0) # reg.exe reads a leading 0 as octal
+            } else if (type == "sz") {
+                if (!only(data, ALNUM " ._,=:/-+()\\")) return "!|" safe(path) "|the sz text has characters that are not allowed"
+                if (data ~ /\\$/) return "!|" safe(path) "|the sz text can not end with a backslash"
+            } else return "!|" safe(path) "|the type must be dword or sz"
+            key = substr(path, 1, length(path) - length(name) - 1)
+            sub(/^[^\\]*/, root, key)
+            return "@|" key "|" name "|" type "|" data
+        }
+        # A name or line for a message: it can not hold the | separator
+        function safe(s) { gsub(/[|]/, "?", s); return s }
         # Prints the launcher collected so far, if there is one
         function finish(    why, r, n) {
             if (!open) return
@@ -1062,14 +1108,16 @@ parse_game_fixes() {
         }
         { sub(/\r$/, "") } # a file saved on Windows
         /^[ \t]*[#;]/ || /^[ \t]*$/ { next }
-        /^[ \t]*\[.*\][ \t]*$/ { # [launcher name] starts a launcher
+        /^[ \t]*\[.*\][ \t]*$/ { # [launcher name] starts a launcher, [wine registry] the registry values
             finish()
             h = trim($0)
             name = trim(substr(h, 2, length(h) - 2))
-            open = 1
+            in_reg = (tolower(name) == "wine registry")
+            open = !in_reg
             replaces = exe = workdir = args = ""
             next
         }
+        in_reg { print registry_line(trim($0)); next }
         !open && index($0, "=") { # before the first section: keys for the whole game
             k = trim(substr($0, 1, index($0, "=") - 1))
             v = trim(substr($0, index($0, "=") + 1))
@@ -1097,6 +1145,7 @@ parse_game_fixes() {
 # failing to get it never stops the install. ZOOM_GAME_FIXES_FILE reads a local file instead.
 load_game_fixes() {
     GAME_FIXES=''
+    GAME_FIXES_REGISTRY='' # "key|name|type|data" per value
     GAME_FIXES_PROTON=''
     GAME_FIXES_PROTON_ASSET=''
     GAME_FIXES_PROTON_SHA512=''
@@ -1139,6 +1188,7 @@ load_game_fixes() {
     _gf_parsed=$(parse_game_fixes "$_gf_file")
     _gf_count=0
     _gf_names=''
+    _gf_reg_count=0
     while IFS='|' read -r _gf_a _gf_b _gf_c _gf_d _gf_e; do
         # The pinned Proton build has an empty first field (see parse_game_fixes)
         if [ -z "$_gf_a" ] && [ "$_gf_b" = 'proton' ]; then
@@ -1152,6 +1202,11 @@ load_game_fixes() {
             log_warning "Game fixes: ignoring \"$_gf_b\": $_gf_c"
             continue
         fi
+        if [ "$_gf_a" = '@' ]; then
+            GAME_FIXES_REGISTRY="$GAME_FIXES_REGISTRY$_gf_b|$_gf_c|$_gf_d|$_gf_e$_gf_nl"
+            _gf_reg_count=$((_gf_reg_count+1))
+            continue
+        fi
         GAME_FIXES="$GAME_FIXES$_gf_a|$_gf_b|$_gf_c|$_gf_d|$_gf_e$_gf_nl"
         _gf_count=$((_gf_count+1))
         _gf_names="${_gf_names:+$_gf_names, }\"$_gf_a\""
@@ -1160,11 +1215,42 @@ $_gf_parsed
 EOL
     if [ $_gf_count -gt 0 ]; then
         log_info "Game fixes: $_gf_count launcher(s) for this game: $_gf_names"
-    elif [ -z "$GAME_FIXES_PROTON" ]; then
-        log_info "Game fixes: no usable launcher in the file"
+    elif [ -z "$GAME_FIXES_PROTON" ] && [ $_gf_reg_count -eq 0 ]; then
+        log_info "Game fixes: nothing usable in the file"
+    fi
+    if [ $_gf_reg_count -gt 0 ]; then
+        log_info "Game fixes: $_gf_reg_count registry value(s) for this game"
     fi
     if [ -n "$GAME_FIXES_PROTON" ]; then
         log_info "Game fixes: this game is pinned to $GAME_FIXES_PROTON"
+    fi
+}
+
+# Sets the registry values of the game's fixes file. It runs after the installer, whose own
+# [Registry] entries (the game's key and paths) are written during the install. One umu call
+# runs a .bat of "reg add" lines. Every value passed parse_game_fixes, so none can break a line.
+apply_game_fix_registry() {
+    [ -n "$GAME_FIXES_REGISTRY" ] || return 0
+    _rg_bat="$INSTALL_PATH/drive_c/zoom_gamefixes.bat"
+    _rg_count=0
+    if ! printf '@echo off\n' > "$_rg_bat"; then
+        log_warning "Game fixes: couldn't write $_rg_bat, the registry values are not set"
+        return 0
+    fi
+    while IFS='|' read -r _rg_key _rg_name _rg_type _rg_data; do
+        [ -n "$_rg_key" ] || continue
+        case $_rg_type in
+            dword) _rg_regtype=REG_DWORD ;;
+            *) _rg_regtype=REG_SZ ;;
+        esac
+        printf 'reg add "%s" /v "%s" /t %s /d "%s" /f\n' "$_rg_key" "$_rg_name" "$_rg_regtype" "$_rg_data" >> "$_rg_bat"
+        _rg_count=$((_rg_count+1))
+    done <<EOL
+$GAME_FIXES_REGISTRY
+EOL
+    log_info "Game fixes: setting $_rg_count registry value(s)..."
+    if ! umu_launch start "C:\\zoom_gamefixes.bat"; then
+        log_warning "Game fixes: setting the registry values failed"
     fi
 }
 
@@ -2393,6 +2479,8 @@ if ! command -v desktop-file-install > /dev/null; then
     log_error "desktop-file-install is not available. Skipping desktop entry creation."
     CREATE_DESKTOP_ENTRIES=0
 fi
+
+apply_game_fix_registry # after the installer, before the first launch
 
 # Create shortcuts using the shortcuts and icons in C:\proton_shortcuts\
 # https://github.com/ValveSoftware/wine/commit/0a02c50a20ddc8f4a4c540c43a8b8a686023d422
