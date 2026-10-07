@@ -6,6 +6,7 @@ and every other game installs exactly as ZOOM built it.
 
 | Game | What's fixed |
 | --- | --- |
+| e-Racer | Its 3D scene is almost black under Proton. A registry setting that the game reads itself is set while installing, and the picture is normal. |
 | EQI | Its Chopin video shows colour bars under the default Proton. The game runs on a specific, tested GE-Proton build instead, downloaded once while installing, so starting the game works offline. |
 | Kaan - Barbarian's Blade | Its intro and cutscene videos show colour bars under the default Proton. The game runs on a specific, tested GE-Proton build instead, downloaded once while installing, so starting the game works offline. |
 | Necro Vision - Hardcore Edition | Its launcher menu (the buttons for DirectX 9/10 and the base game/Lost Company) doesn't start the game correctly. It's replaced with four shortcuts that do: DirectX 9 or 10, for the base game or its Lost Company expansion. |
