@@ -10,6 +10,32 @@ A game fix is a small text file that changes how one game is installed. It can d
 Most games don't need a fix, so they have no file. For a plain list of the games that do, see [GAMES.md](GAMES.md).
 This page explains how to add or change a fix, step by step. You don't need to know anything about Proton to follow it.
 
+## Getting a SHA-512 checksum
+
+Some fixes ask for a SHA-512, a 128-character fingerprint of a file (the GE-Proton keys and the zip in Part 4 both do).
+To get one, open a terminal (Bash and ZSH both work), go to the folder that holds the file and run `sha512sum` on it:
+
+```sh
+cd game-fixes/files
+sha512sum ddraw-limiter-1.0.zip
+```
+
+It prints the fingerprint, then spaces and the file's name:
+
+```
+63a650da639c99afb31aa676cc776a3e10a2ce7e88c93bb8799876fccfc1ca77973d1e69b7c2788b774a730eec32a4b71ce23a9ff3711b7664032032aaa7ef73  ddraw-limiter-1.0.zip
+```
+
+Copy only the 128 characters before the spaces. To print just those, add `| cut -d ' ' -f1`:
+
+```sh
+sha512sum ddraw-limiter-1.0.zip | cut -d ' ' -f1
+```
+
+`sha512sum` comes with every common Linux distro. If yours doesn't have it, `openssl dgst -sha512 ddraw-limiter-1.0.zip`
+prints the same fingerprint after `= `. Any change to the file changes the fingerprint, so get it again whenever the file
+changes.
+
 ## How the script uses the file
 
 While installing, `zoom-platform-darth.sh` downloads `game-fixes/<game GUID>.ini` from the `main` branch of this repository, for the game being installed **only**. A `404`, or no network, means the install goes on as usual. The script logs everything it does with the file.
@@ -369,11 +395,8 @@ Some fixes need a file in the game's folder. e-Racer is the example: under Proto
 
 ### Get the zip ready
 
-Put the zip in `game-fixes/files/`. Its SHA-512 goes in the fix file, so get it with:
-
-```sh
-sha512sum game-fixes/files/ddraw-limiter-1.0.zip
-```
+Put the zip in `game-fixes/files/`. The fix file needs its SHA-512, see
+[Getting a SHA-512 checksum](#getting-a-sha-512-checksum) at the top of this page.
 
 The source of the e-Racer one, and a script that rebuilds it, are in `game-fixes/src/ddraw-limiter/`. Rebuilding gives the
 same zip, byte for byte, as long as the compiler version is the same.
