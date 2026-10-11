@@ -1,10 +1,11 @@
 # Game fixes
 
-A game fix is a small text file that changes how one game is installed. It can do three things:
+A game fix is a small text file that changes how one game is installed. It can do four things:
 
 - Replace a ZOOM shortcut that doesn't work under Proton with launchers that do (Necro Vision's launcher menu is one).
 - Run the game on one specific, tested version of GE-Proton instead of umu's default Proton (Kaan needs this for its videos).
 - Set values in the game's Windows registry (e-Racer needs one, or its picture is almost black).
+- Copy files from a zip into the game's folder (e-Racer gets a small `ddraw.dll` that keeps it at 60 frames per second).
 
 Most games don't need a fix, so they have no file. For a plain list of the games that do, see [GAMES.md](GAMES.md).
 This page explains how to add or change a fix, step by step. You don't need to know anything about Proton to follow it.
@@ -358,6 +359,89 @@ Game fixes: setting 1 registry value(s)...
 Then look for the value in `<install folder>/user.reg` (`HKCU` values), or in `system.reg` for `HKLM` ones. e-Racer's
 file, [94c96dc7-8c5a-4c5f-ab44-a5dcf879d539.ini](94c96dc7-8c5a-4c5f-ab44-a5dcf879d539.ini), is a real one to copy from.
 
+## Part 4: Files
+
+### When you need it
+
+Some fixes need a file in the game's folder. e-Racer is the example: under Proton it runs at the screen's refresh rate
+(75 frames per second on a 75 Hz screen), and parts of its game logic seem to follow the frame rate. A small replacement
+`ddraw.dll` caps it at 60. A fix file can copy files like that out of a zip while the game installs.
+
+### Get the zip ready
+
+Put the zip in `game-fixes/files/`. Its SHA-512 goes in the fix file, so get it with:
+
+```sh
+sha512sum game-fixes/files/ddraw-limiter-1.0.zip
+```
+
+The source of the e-Racer one, and a script that rebuilds it, are in `game-fixes/src/ddraw-limiter/`. Rebuilding gives the
+same zip, byte for byte, as long as the compiler version is the same.
+
+### Write the section
+
+```ini
+[files]
+zip          = ddraw-limiter-1.0.zip
+zip_sha512   = <128 lowercase hex characters>
+files        = ddraw.dll, LICENSE-ddraw-limiter.txt
+config       = ddraw-darth.ini
+backup       = ddraw.dll
+dll_override = ddraw
+```
+
+- `zip`, `zip_sha512` and `files` are required. The others are optional.
+- `zip` is the name of a file in `game-fixes/files/`. It must end in `.zip`.
+- `files` are the names to copy out of the zip, separated by commas. They are always overwritten.
+- `config` names files that are copied only when they aren't in the game's folder yet, so a reinstall keeps what the
+  player changed.
+- `backup` names files from `files` to keep first. The original is saved as `<name>.orig`, only if there is no `.orig`
+  yet, so the backup is always the file ZOOM shipped.
+- `dll_override` is a DLL name, like `ddraw`. After the files are copied, Wine is told to use the DLL from the game's
+  folder instead of its own. Don't write this as a `[wine registry]` line: older versions of the script would set it
+  without copying the DLL, and the game wouldn't start.
+
+Names take letters, digits and `. _ -` only, and can't include a folder. The zip's own paths are never used.
+`files` is a reserved section name, like `wine registry`, so don't give a launcher that name.
+
+### What happens at install time
+
+The zip is downloaded when the install starts and checked against its SHA-512, so a bad one shows up before the
+installer runs. After the installer finishes, the script looks up the game's folder, unpacks the zip into a temporary
+folder (with `unzip`, `bsdtar` or `python3`, whichever the system has) and copies the named files. Installing a DLC or
+reinstalling the game does it again, because ZOOM's installer puts its own files back each time.
+
+If anything goes wrong, the game keeps ZOOM's files and the install carries on. That includes a download that fails, a
+wrong checksum, a zip that won't unpack, a name the zip doesn't have, and a system with none of the three tools. When the
+fix file asks for a `dll_override`, a failure also removes any override that an earlier install left behind. Otherwise
+Wine would load the DLL that ZOOM just put back, and the game would crash.
+
+Nothing happens when the game starts, and nothing is downloaded then.
+
+### Going back by hand
+
+Copy `ddraw.dll.orig` over `ddraw.dll` in the game's folder, then remove the override:
+
+```sh
+umu-run reg delete 'HKCU\Software\Wine\DllOverrides' /v ddraw /f
+```
+
+### Try it
+
+Run the script with `ZOOM_GAME_FIXES_FILE` set to your file, and `ZOOM_GAME_FIXES_FILES_DIR` set to the folder that holds
+the zip (without it, the script downloads the zip from the `main` branch, which has a 404 until your change is merged).
+The output should include:
+
+```
+Game fixes: files from ddraw-limiter-1.0.zip: ddraw.dll,LICENSE-ddraw-limiter.txt (and, if missing, ddraw-darth.ini)
+Game fixes: reading ddraw-limiter-1.0.zip from <folder> (from ZOOM_GAME_FIXES_FILES_DIR)
+Game fixes: kept the original ddraw.dll as ddraw.dll.orig
+Game fixes: copied ddraw.dll
+```
+
+Then look in the game's folder for the files and the `.orig`, and in `<install folder>/user.reg` for the override.
+e-Racer's file, [94c96dc7-8c5a-4c5f-ab44-a5dcf879d539.ini](94c96dc7-8c5a-4c5f-ab44-a5dcf879d539.ini), is a real one to copy from.
+
 ## Example: a game that needs both
 
 A made-up game, Example Quest. Its ZOOM shortcut starts `Launcher.exe`, which fails under Proton, and its cutscenes only
@@ -403,4 +487,6 @@ take letters, digits, space and `. _ ( ) + , -` only, must be relative, and can'
 digits, space and `+ . _ , = : / -` only. A launcher that fails a check is skipped with a warning. The Proton keys are
 held to the shapes above: the tag is `GE-Proton<N>-<N>`, the asset is the tag plus `.tar.gz` or `-x86_64.tar.gz`, and
 the checksum is 128 lowercase hex characters. A value that fails is ignored with a warning. Registry paths take the
-same characters as launcher paths, and `sz` text also takes `: = \`. Quotes, `%`, `&` and `|` are refused.
+same characters as launcher paths, and `sz` text also takes `: = \`. Quotes, `%`, `&` and `|` are refused. In `[files]`,
+the zip name and the file names take letters, digits and `. _ -` only, with no folders, and the checksum is 128 lowercase
+hex characters. The zip is copied from by name only, after its SHA-512 matched.

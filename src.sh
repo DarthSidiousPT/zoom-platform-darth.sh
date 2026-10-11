@@ -1005,6 +1005,9 @@ EOL
 #   |proton|tag|asset|sha512      or      !|proton|reason
 # The [wine registry] section holds one value per line, "HKCU\Software\...\name = dword:1" or
 # "= sz:text"; each comes out as @|key|name|type|data, or !|<line>|reason.
+# The [files] section names a zip, its checksum and the file names to copy out of it; it comes
+# out as one $|key|value line per key (zip, zip_sha512, files, config, backup, dll_override), or
+# !|files|reason.
 # $1: the file
 parse_game_fixes() {
     awk '
@@ -1103,6 +1106,49 @@ parse_game_fixes() {
             if (why != "") print "!|proton|" why
             else print "|proton|" g_tag "|" g_asset "|" g_sha
         }
+        # A comma separated list of plain file names (no folders). Leaves the list without spaces
+        # in NORM and returns "" when it is fine, else the reason.
+        function bad_filelist(list,    n, parts, i, one) {
+            NORM = ""
+            n = split(list, parts, ",")
+            for (i = 1; i <= n; i++) {
+                one = trim(parts[i])
+                if (one == "" || one !~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/) return "has a name that is not a plain file name"
+                if (NORM != "") NORM = NORM ","
+                NORM = NORM one
+            }
+            return ""
+        }
+        # Is the name in the comma separated list?
+        function in_list(name, list) { return index("," list ",", "," name ",") > 0 }
+        # Prints the [files] section. A zip off the network is only copied from by file name, so
+        # every name is checked here and the checksum decides whether the zip is the right one.
+        function files_out(    why, n, parts, i, nf, nc, nb) {
+            if (f_zip == "" && f_sha == "" && f_list == "" && f_config == "" && f_backup == "" && f_over == "") return
+            why = ""
+            if (f_zip == "" || f_sha == "" || f_list == "") why = "zip, zip_sha512 and files must all be given"
+            else if (f_zip !~ /^[A-Za-z0-9][A-Za-z0-9._-]*[.]zip$/) why = "zip must be a plain file name ending in .zip"
+            else if (length(f_sha) != 128 || !only(f_sha, "0123456789abcdef")) why = "zip_sha512 must be 128 lowercase hex characters"
+            if (why == "") { why = bad_filelist(f_list); if (why != "") why = "files " why; nf = NORM }
+            if (why == "" && f_config != "") { why = bad_filelist(f_config); if (why != "") why = "config " why; nc = NORM }
+            if (why == "" && f_backup != "") { why = bad_filelist(f_backup); if (why != "") why = "backup " why; nb = NORM }
+            if (why == "" && nc != "") {
+                n = split(nc, parts, ",")
+                for (i = 1; i <= n; i++) if (in_list(parts[i], nf)) why = "config and files can not name the same file"
+            }
+            if (why == "" && nb != "") {
+                n = split(nb, parts, ",")
+                for (i = 1; i <= n; i++) if (!in_list(parts[i], nf)) why = "backup can only name files from the files list"
+            }
+            if (why == "" && f_over != "" && f_over !~ /^[a-z0-9_]+$/) why = "dll_override must be a DLL name in lowercase letters, digits or _"
+            if (why != "") { print "!|files|" safe(why); return }
+            print "$|zip|" f_zip
+            print "$|zip_sha512|" f_sha
+            print "$|files|" nf
+            if (nc != "") print "$|config|" nc
+            if (nb != "") print "$|backup|" nb
+            if (f_over != "") print "$|dll_override|" f_over
+        }
         BEGIN {
             ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         }
@@ -1113,11 +1159,26 @@ parse_game_fixes() {
             h = trim($0)
             name = trim(substr(h, 2, length(h) - 2))
             in_reg = (tolower(name) == "wine registry")
-            open = !in_reg
+            in_files = (tolower(name) == "files")
+            open = !in_reg && !in_files
             replaces = exe = workdir = args = ""
             next
         }
         in_reg { print registry_line(trim($0)); next }
+        in_files {
+            if (index($0, "=")) {
+                k = trim(substr($0, 1, index($0, "=") - 1))
+                v = trim(substr($0, index($0, "=") + 1))
+                if (k == "zip") f_zip = v
+                else if (k == "zip_sha512") f_sha = v
+                else if (k == "files") f_list = v
+                else if (k == "config") f_config = v
+                else if (k == "backup") f_backup = v
+                else if (k == "dll_override") f_over = v
+                # any other key is ignored, so an older script can read a newer file
+            }
+            next
+        }
         !open && index($0, "=") { # before the first section: keys for the whole game
             k = trim(substr($0, 1, index($0, "=") - 1))
             v = trim(substr($0, index($0, "=") + 1))
@@ -1136,7 +1197,7 @@ parse_game_fixes() {
             # any other key is ignored, so an older script can read a newer file
             next
         }
-        END { finish(); game_wide() }
+        END { finish(); game_wide(); files_out() }
     ' "$1"
 }
 
@@ -1149,6 +1210,13 @@ load_game_fixes() {
     GAME_FIXES_PROTON=''
     GAME_FIXES_PROTON_ASSET=''
     GAME_FIXES_PROTON_SHA512=''
+    GAME_FILES_ZIP='' # the [files] section: a zip and the names to copy out of it
+    GAME_FILES_SHA512=''
+    GAME_FILES_LIST=''
+    GAME_FILES_CONFIG=''
+    GAME_FILES_BACKUP=''
+    GAME_FILES_OVERRIDE=''
+    GAME_FIXES_REGISTRY_DELETE='' # "key|name" per value to remove (see apply_game_fix_files)
     _gf_nl='
 '
     _gf_file="$CACHE_DIR/game-fixes.ini"
@@ -1198,6 +1266,17 @@ load_game_fixes() {
             continue
         fi
         [ -n "$_gf_a" ] || continue
+        if [ "$_gf_a" = '$' ]; then
+            case $_gf_b in
+                zip) GAME_FILES_ZIP=$_gf_c ;;
+                zip_sha512) GAME_FILES_SHA512=$_gf_c ;;
+                files) GAME_FILES_LIST=$_gf_c ;;
+                config) GAME_FILES_CONFIG=$_gf_c ;;
+                backup) GAME_FILES_BACKUP=$_gf_c ;;
+                dll_override) GAME_FILES_OVERRIDE=$_gf_c ;;
+            esac
+            continue
+        fi
         if [ "$_gf_a" = '!' ]; then
             log_warning "Game fixes: ignoring \"$_gf_b\": $_gf_c"
             continue
@@ -1215,8 +1294,11 @@ $_gf_parsed
 EOL
     if [ $_gf_count -gt 0 ]; then
         log_info "Game fixes: $_gf_count launcher(s) for this game: $_gf_names"
-    elif [ -z "$GAME_FIXES_PROTON" ] && [ $_gf_reg_count -eq 0 ]; then
+    elif [ -z "$GAME_FIXES_PROTON" ] && [ $_gf_reg_count -eq 0 ] && [ -z "$GAME_FILES_ZIP" ]; then
         log_info "Game fixes: nothing usable in the file"
+    fi
+    if [ -n "$GAME_FILES_ZIP" ]; then
+        log_info "Game fixes: files from $GAME_FILES_ZIP: $GAME_FILES_LIST${GAME_FILES_CONFIG:+ (and, if missing, $GAME_FILES_CONFIG)}"
     fi
     if [ $_gf_reg_count -gt 0 ]; then
         log_info "Game fixes: $_gf_reg_count registry value(s) for this game"
@@ -1230,7 +1312,7 @@ EOL
 # [Registry] entries (the game's key and paths) are written during the install. One umu call
 # runs a .bat of "reg add" lines. Every value passed parse_game_fixes, so none can break a line.
 apply_game_fix_registry() {
-    [ -n "$GAME_FIXES_REGISTRY" ] || return 0
+    [ -n "$GAME_FIXES_REGISTRY" ] || [ -n "$GAME_FIXES_REGISTRY_DELETE" ] || return 0
     _rg_bat="$INSTALL_PATH/drive_c/zoom_gamefixes.bat"
     _rg_count=0
     if ! printf '@echo off\n' > "$_rg_bat"; then
@@ -1248,9 +1330,202 @@ apply_game_fix_registry() {
     done <<EOL
 $GAME_FIXES_REGISTRY
 EOL
+    # Values to remove (a leftover override), written the same way; reg exits 1 if one is not there
+    while IFS='|' read -r _rg_key _rg_name; do
+        [ -n "$_rg_key" ] || continue
+        printf 'reg delete "%s" /v "%s" /f >nul 2>&1\n' "$_rg_key" "$_rg_name" >> "$_rg_bat"
+    done <<EOL
+$GAME_FIXES_REGISTRY_DELETE
+EOL
     log_info "Game fixes: setting $_rg_count registry value(s)..."
     if ! umu_launch start "C:\\zoom_gamefixes.bat"; then
         log_warning "Game fixes: setting the registry values failed"
+    fi
+}
+
+# Gets the zip of the [files] section into GAME_FILES_ZIP_PATH, checked against its SHA-512 from
+# the fixes file. ZOOM_GAME_FIXES_FILES_DIR=<folder> reads it from a local folder instead of the
+# network (needed before a new zip is on main). Any failure only warns: the game then stays as
+# ZOOM made it.
+fetch_game_fix_zip() {
+    GAME_FILES_ZIP_PATH=''
+    [ -n "$GAME_FILES_ZIP" ] || return 0
+    _fz_file="$CACHE_DIR/$GAME_FILES_ZIP"
+    if ! mkdir -p "$CACHE_DIR"; then
+        log_warning "Game fixes: couldn't create $CACHE_DIR, the files of the fixes file are not used"
+        return 0
+    fi
+    rm -f "$_fz_file"
+    if [ -n "${ZOOM_GAME_FIXES_FILES_DIR:-}" ]; then
+        log_info "Game fixes: reading $GAME_FILES_ZIP from $ZOOM_GAME_FIXES_FILES_DIR (from ZOOM_GAME_FIXES_FILES_DIR)"
+        if ! cp "$ZOOM_GAME_FIXES_FILES_DIR/$GAME_FILES_ZIP" "$_fz_file" 2> /dev/null; then
+            log_warning "Game fixes: couldn't read $ZOOM_GAME_FIXES_FILES_DIR/$GAME_FILES_ZIP, going on without its files"
+            return 0
+        fi
+    else
+        log_info "Game fixes: downloading $GAME_FILES_ZIP..."
+        # --fail so an error page isn't saved as the zip
+        if ! curl -sL --fail --connect-timeout 15 --max-time 60 \
+                -H "User-Agent: $HTTP_USER_AGENT" -o "$_fz_file" "$GAME_FIXES_URL/files/$GAME_FILES_ZIP"; then
+            rm -f "$_fz_file"
+            log_warning "Game fixes: couldn't download $GAME_FIXES_URL/files/$GAME_FILES_ZIP, going on without its files"
+            return 0
+        fi
+    fi
+    if [ "$(get_sha512 "$_fz_file")" != "$GAME_FILES_SHA512" ]; then
+        rm -f "$_fz_file"
+        log_warning "Game fixes: $GAME_FILES_ZIP doesn't match the checksum in the game fixes file, not using it"
+        return 0
+    fi
+    GAME_FILES_ZIP_PATH=$_fz_file
+}
+
+# Unpacks a zip into an existing folder with whichever tool the system has. Returns 2 when there
+# is none. $1: the zip, $2: the folder
+unzip_to() {
+    if command -v unzip > /dev/null; then
+        unzip -q -o "$1" -d "$2"
+    elif command -v bsdtar > /dev/null; then
+        bsdtar -xf "$1" -C "$2"
+    elif command -v python3 > /dev/null; then
+        python3 -m zipfile -e "$1" "$2"
+    else
+        return 2
+    fi
+}
+
+# Prints the game's install folder as a path inside the prefix. Wine is asked for the "Inno Setup:
+# App Path" of this installer's uninstall key (the base game and its DLC write the same one), since
+# system.reg may not be written yet when the installer has just exited. Prints nothing and returns
+# 1 unless it is a plain C:\ path that exists.
+get_game_folder() {
+    _gp_win=$( (umu_launch reg query "HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{$INNO_APPID}_is1" /v "Inno Setup: App Path" < /dev/null) 2> /dev/null |
+        tr -d '\r' | sed -n 's/^.*Inno Setup: App Path[[:space:]]*REG_SZ[[:space:]]*//p' | head -n 1)
+    [ -n "$_gp_win" ] || return 1
+    _gp_rel=$(printf '%s' "$_gp_win" | tr '\134' '/')
+    case $_gp_rel in
+        [Cc]:/*) _gp_rel=${_gp_rel#??} ;;
+        *) return 1 ;;
+    esac
+    _gp_rel=${_gp_rel#/}
+    [ -n "$_gp_rel" ] || return 1
+    case "/$_gp_rel/" in
+        */../*|*//*) return 1 ;;
+    esac
+    [ -d "$INSTALL_PATH/drive_c/$_gp_rel" ] || return 1
+    printf '%s\n' "$INSTALL_PATH/drive_c/$_gp_rel"
+}
+
+# Copies the files of the [files] section into the game's folder. Only the names from the fixes
+# file are used, never a path from the archive; each must be a plain file in the zip. A backup of
+# the originals is made once (NAME.orig), and config files are copied only when missing, so a
+# reinstall keeps what the user edited. Returns 1 if anything failed (the game folder may then
+# hold some of the files, but the caller sets no override).
+game_fix_files_copy() {
+    if [ -z "${GAME_FILES_ZIP_PATH:-}" ]; then
+        return 1 # fetch_game_fix_zip has said why
+    fi
+    if ! _cf_dir=$(get_game_folder); then
+        log_warning "Game fixes: couldn't find the game's folder, the files of the fixes file are not copied"
+        return 1
+    fi
+    if ! _cf_tmp=$(mktemp -d "$CACHE_DIR/.zoom-files.XXXXXX"); then
+        log_warning "Game fixes: couldn't create a folder in $CACHE_DIR, the files are not copied"
+        return 1
+    fi
+    unzip_to "$GAME_FILES_ZIP_PATH" "$_cf_tmp" > /dev/null 2>&1
+    _cf_rc=$?
+    if [ $_cf_rc -ne 0 ]; then
+        if [ $_cf_rc -eq 2 ]; then
+            log_warning "Game fixes: none of unzip, bsdtar or python3 was found, the files are not copied"
+        else
+            log_warning "Game fixes: couldn't unpack $GAME_FILES_ZIP, the files are not copied"
+        fi
+        rm -rf "$_cf_tmp"
+        return 1
+    fi
+
+    _cf_all=$(printf '%s,%s' "$GAME_FILES_LIST" "$GAME_FILES_CONFIG" | tr ',' '\n')
+    _cf_bad=0
+    # Check every source before touching the game folder
+    while IFS= read -r _cf_n; do
+        [ -n "$_cf_n" ] || continue
+        if [ ! -f "$_cf_tmp/$_cf_n" ] || [ -L "$_cf_tmp/$_cf_n" ]; then
+            log_warning "Game fixes: $GAME_FILES_ZIP has no plain file called \"$_cf_n\""
+            _cf_bad=1
+        fi
+    done <<EOL
+$_cf_all
+EOL
+    if [ $_cf_bad -ne 0 ]; then
+        rm -rf "$_cf_tmp"
+        return 1
+    fi
+
+    _cf_list=$(printf '%s' "$GAME_FILES_BACKUP" | tr ',' '\n')
+    while IFS= read -r _cf_n; do
+        [ -n "$_cf_n" ] || continue
+        if [ -f "$_cf_dir/$_cf_n" ] && [ ! -e "$_cf_dir/$_cf_n.orig" ]; then
+            if cp -p "$_cf_dir/$_cf_n" "$_cf_dir/$_cf_n.orig"; then
+                log_info "Game fixes: kept the original $_cf_n as $_cf_n.orig"
+            else
+                log_warning "Game fixes: couldn't back up $_cf_n, the files are not copied"
+                _cf_bad=1
+            fi
+        fi
+    done <<EOL
+$_cf_list
+EOL
+    _cf_list=$(printf '%s' "$GAME_FILES_LIST" | tr ',' '\n')
+    while [ $_cf_bad -eq 0 ] && IFS= read -r _cf_n; do
+        [ -n "$_cf_n" ] || continue
+        if cp "$_cf_tmp/$_cf_n" "$_cf_dir/.$_cf_n.zoom-new" && mv -f "$_cf_dir/.$_cf_n.zoom-new" "$_cf_dir/$_cf_n"; then
+            log_info "Game fixes: copied $_cf_n"
+        else
+            rm -f "$_cf_dir/.$_cf_n.zoom-new"
+            log_warning "Game fixes: couldn't copy $_cf_n into $_cf_dir"
+            _cf_bad=1
+        fi
+    done <<EOL
+$_cf_list
+EOL
+    _cf_list=$(printf '%s' "$GAME_FILES_CONFIG" | tr ',' '\n')
+    while [ $_cf_bad -eq 0 ] && IFS= read -r _cf_n; do
+        [ -n "$_cf_n" ] || continue
+        if [ -e "$_cf_dir/$_cf_n" ]; then
+            log_info "Game fixes: kept your $_cf_n"
+        elif cp "$_cf_tmp/$_cf_n" "$_cf_dir/.$_cf_n.zoom-new" && mv -f "$_cf_dir/.$_cf_n.zoom-new" "$_cf_dir/$_cf_n"; then
+            log_info "Game fixes: copied $_cf_n"
+        else
+            rm -f "$_cf_dir/.$_cf_n.zoom-new"
+            log_warning "Game fixes: couldn't copy $_cf_n into $_cf_dir"
+            _cf_bad=1
+        fi
+    done <<EOL
+$_cf_list
+EOL
+    rm -rf "$_cf_tmp"
+    [ $_cf_bad -eq 0 ]
+}
+
+# Runs after the installer. The DLL override is queued for apply_game_fix_registry only when every
+# file got copied. When the fixes file asks for an override and the copy failed, the override is
+# queued for removal instead: ZOOM's installer has just put its own DLL back, and an override left
+# over from an earlier run would load that one as native and crash the game.
+apply_game_fix_files() {
+    [ -n "$GAME_FILES_ZIP" ] || return 0
+    game_fix_files_copy
+    _af_rc=$?
+    [ -z "${GAME_FILES_ZIP_PATH:-}" ] || rm -f "$GAME_FILES_ZIP_PATH"
+    if [ $_af_rc -eq 0 ]; then
+        if [ -n "$GAME_FILES_OVERRIDE" ]; then
+            GAME_FIXES_REGISTRY="${GAME_FIXES_REGISTRY}HKCU\\Software\\Wine\\DllOverrides|$GAME_FILES_OVERRIDE|sz|native,builtin$_gf_nl"
+        fi
+    else
+        log_warning "Game fixes: the game keeps ZOOM's own files"
+        if [ -n "$GAME_FILES_OVERRIDE" ]; then
+            GAME_FIXES_REGISTRY_DELETE="${GAME_FIXES_REGISTRY_DELETE}HKCU\\Software\\Wine\\DllOverrides|$GAME_FILES_OVERRIDE$_gf_nl"
+        fi
     fi
 }
 
@@ -2361,6 +2636,7 @@ fi
 # A pinned Proton build must be settled before the first umu call, which creates the prefix
 load_game_fixes # optional, sets GAME_FIXES and the pinned Proton
 ensure_pinned_proton # sets ZOOM_PROTONPATH, and PROTONPATH, only when the game is pinned
+fetch_game_fix_zip # the zip of the [files] section, checked now so a bad one shows before the long install
 
 # Inno inf: hides the pages the user shouldn't change
 mkdir -p "$INSTALL_PATH/drive_c"
@@ -2480,6 +2756,7 @@ if ! command -v desktop-file-install > /dev/null; then
     CREATE_DESKTOP_ENTRIES=0
 fi
 
+apply_game_fix_files # after the installer, which has just put ZOOM's own files in place
 apply_game_fix_registry # after the installer, before the first launch
 
 # Create shortcuts using the shortcuts and icons in C:\proton_shortcuts\

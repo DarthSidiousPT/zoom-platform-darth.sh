@@ -1,6 +1,6 @@
 # ddraw limiter
 
-A small `ddraw.dll` that caps e-Racer at 60 frames per second on Linux. The game's physics follow the frame rate, and under Proton it runs at the screen's refresh rate, so on a 75 Hz screen the cars drive 25% too fast.
+A small `ddraw.dll` that caps e-Racer at 60 frames per second on Linux. Under Proton the game runs at the screen's refresh rate (75 FPS on a 75 Hz screen), and parts of its game logic seem to follow the frame rate: in hand tests, collision damage looked lower at lower frame rates, while the car's speed looked the same from 20 to 300 FPS.
 
 It is a proxy: it loads Wine's own ddraw, hands every call to it, and only waits a little before each `Flip` so the game never presents more than 60 times a second.
 
