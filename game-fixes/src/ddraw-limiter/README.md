@@ -1,0 +1,56 @@
+# ddraw limiter
+
+A small `ddraw.dll` that caps e-Racer at 60 frames per second on Linux. The game's physics follow the frame rate, and under Proton it runs at the screen's refresh rate, so on a 75 Hz screen the cars drive 25% too fast.
+
+It is a proxy: it loads Wine's own ddraw, hands every call to it, and only waits a little before each `Flip` so the game never presents more than 60 times a second.
+
+## Status
+
+Tried by hand on UMU-Proton with the e-Racer base game and the Track Pack DLC, on a 60 Hz and a 75 Hz screen. It holds a steady 60 FPS in both. Without it, the game runs at the screen's rate (75 FPS at 75 Hz). It is not used by the script yet: nothing installs this file for you.
+
+On a screen that is not 60 Hz the picture can't be perfectly smooth, because 60 frames don't fit evenly into the refreshes. With vsync on (the default) it looks better than with vsync off, at the cost of slightly more input lag.
+
+It is untested on Windows. The game's folder already has DDrawCompat there, and this DLL replaces it, so Windows users would lose its fixes.
+
+## Build
+
+You need mingw-w64 (on Debian/Ubuntu: `gcc-mingw-w64-i686`).
+
+```sh
+sh build.sh [OUTPUT_DIR]
+```
+
+This writes `ddraw-limiter.zip` to `OUTPUT_DIR` (`./out` by default) and prints its SHA-512. The zip holds `ddraw.dll`, `ddraw-darth.ini` and the license. The DLL is 32-bit because e-Racer is.
+
+## Settings
+
+`ddraw-darth.ini` sits next to the DLL in the game folder. Without it, the defaults apply.
+
+```ini
+[limiter]
+fps = 60
+vsync = on
+```
+
+- `fps`: the highest frame rate the game may present, a whole number from 0 to 1000. `0` turns the cap off. Anything else (text, a negative number, more than 1000) means 60.
+- `vsync`: `on` or `off`, in any capitals (`OFF` works the same as `off`).
+  - `on`: the game waits for the screen as usual.
+  - `off`: the game never waits, so frames come out at the `fps` cap and the picture can tear.
+  - `no` and `false` also mean `off`. Any other text, even `0`, means `on`.
+
+The game reads the file once, when it starts. `vsync = off` only stops the game from waiting. If Mesa or the desktop still syncs to the screen, the frame rate stays at the refresh rate (on the test machine it needed `vblank_mode=0` as well).
+
+## Try it by hand
+
+1. Copy the original `ddraw.dll` from the game folder somewhere safe, then put the new `ddraw.dll` (and, if you want to change the settings, `ddraw-darth.ini`) from the zip in its place.
+2. Tell Wine to use the file in the game folder:
+
+   ```sh
+   umu-run reg add 'HKCU\Software\Wine\DllOverrides' /v ddraw /d native,builtin /f
+   ```
+
+To go back, copy the original `ddraw.dll` over ours and delete the override (`reg delete 'HKCU\Software\Wine\DllOverrides' /v ddraw /f`).
+
+## License
+
+BSD 3-Clause, the same as the rest of this repository. The file carries a copyright notice and the repository URL, in its version information and as a plain string.
