@@ -1,13 +1,12 @@
-# v1.5.2-darth
-
 ## Script Improvements
 
-This _new_ small version includes a nice improvement for the `game-fixes`: can now copy files from a zip into a game's folder while the game installs. This is something that was done for scenarios where we need to pack files and configs for a specific game. In the case this will start with the game e-Racer.
+- `zoom-platform-darth.sh`: a fix file can now set the Wine override for more than one DLL. The new `dll_overrides` key takes a comma separated list, like `ddraw, dinput`.
 
-## `game-fixes` structure
+## `game-fixes` changes
 
-Now, alongside the usual `<zoom_id>.ini` files, we have **two new folders**: one contains the `/files` that will be downloaded (the final package) and the other will be the source-code for fixes, and they stay under `/src`.
+- `game-fixes/files/eracer-fixes-1.0.zip` is the new package for e-Racer, now. It holds the 60 FPS limiter and a gamepad layer (Xidi) together.
 
 ## Game specific improvements
 
-- v1.5.2-darth includes an alternative `ddraw.dll`, alongside its own _config_ file (`ddraw-darth.ini`) which serves to limit the framerate, by default, to 60 FPS with VSync on for the game **e-Racer**. You can check the current issues and solutions for this game on our [discussions topic](https://github.com/DarthSidiousPT/zoom-platform-darth.sh/discussions/3).
+- **e-Racer** now gets Xidi 5.0.0, for Xbox (and other XInput) gamepads. To avoid stick drift, `Xidi.ini` in the game's folder sets a 10% deadzone for the left stick. You can change `DeadzonePercentStickLeft` yourself.
+- If **e-Racer** freezes when you bind a gamepad button that another action already uses, open Controls in the main menu, pick Default at the bottom and bind again. The game does this on Windows too, in my tests. You can check the current issues and solutions for this game on our [discussions topic](https://github.com/DarthSidiousPT/zoom-platform-darth.sh/discussions/3).
