@@ -22,6 +22,8 @@ sh build.sh [OUTPUT_DIR]
 
 This writes `ddraw-limiter.zip` to `OUTPUT_DIR` (`./out` by default) and prints its SHA-512. The zip holds `ddraw.dll`, `ddraw-darth.ini` and the license. The DLL is 32-bit because e-Racer is.
 
+The build is reproducible: the same source and the same compiler give the same bytes, whatever the time, folder or time zone. Another compiler version can give a different DLL, so the zip in `game-fixes/files/` is the one the script checks.
+
 ## Settings
 
 `ddraw-darth.ini` sits next to the DLL in the game folder. Without it, the defaults apply.
