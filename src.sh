@@ -1006,7 +1006,8 @@ EOL
 # The [wine registry] section holds one value per line, "HKCU\Software\...\name = dword:1" or
 # "= sz:text"; each comes out as @|key|name|type|data, or !|<line>|reason.
 # The [files] section names a zip, its checksum and the file names to copy out of it; it comes
-# out as one $|key|value line per key (zip, zip_sha512, files, config, backup, dll_override), or
+# out as one $|key|value line per key (zip, zip_sha512, files, config, backup, dll_override,
+# dll_overrides), or
 # !|files|reason.
 # $1: the file
 parse_game_fixes() {
@@ -1123,8 +1124,8 @@ parse_game_fixes() {
         function in_list(name, list) { return index("," list ",", "," name ",") > 0 }
         # Prints the [files] section. A zip off the network is only copied from by file name, so
         # every name is checked here and the checksum decides whether the zip is the right one.
-        function files_out(    why, n, parts, i, nf, nc, nb) {
-            if (f_zip == "" && f_sha == "" && f_list == "" && f_config == "" && f_backup == "" && f_over == "") return
+        function files_out(    why, n, parts, i, nf, nc, nb, no, one) {
+            if (f_zip == "" && f_sha == "" && f_list == "" && f_config == "" && f_backup == "" && f_over == "" && f_overs == "") return
             why = ""
             if (f_zip == "" || f_sha == "" || f_list == "") why = "zip, zip_sha512 and files must all be given"
             else if (f_zip !~ /^[A-Za-z0-9][A-Za-z0-9._-]*[.]zip$/) why = "zip must be a plain file name ending in .zip"
@@ -1141,6 +1142,15 @@ parse_game_fixes() {
                 for (i = 1; i <= n; i++) if (!in_list(parts[i], nf)) why = "backup can only name files from the files list"
             }
             if (why == "" && f_over != "" && f_over !~ /^[a-z0-9_]+$/) why = "dll_override must be a DLL name in lowercase letters, digits or _"
+            if (why == "" && f_overs != "") {
+                n = split(f_overs, parts, ",")
+                for (i = 1; i <= n; i++) {
+                    one = trim(parts[i])
+                    if (one !~ /^[a-z0-9_]+$/) why = "dll_overrides must be DLL names in lowercase letters, digits or _, separated by commas"
+                    if (no != "") no = no ","
+                    no = no one
+                }
+            }
             if (why != "") { print "!|files|" safe(why); return }
             print "$|zip|" f_zip
             print "$|zip_sha512|" f_sha
@@ -1148,6 +1158,7 @@ parse_game_fixes() {
             if (nc != "") print "$|config|" nc
             if (nb != "") print "$|backup|" nb
             if (f_over != "") print "$|dll_override|" f_over
+            if (no != "") print "$|dll_overrides|" no
         }
         BEGIN {
             ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -1175,6 +1186,7 @@ parse_game_fixes() {
                 else if (k == "config") f_config = v
                 else if (k == "backup") f_backup = v
                 else if (k == "dll_override") f_over = v
+                else if (k == "dll_overrides") f_overs = v
                 # any other key is ignored, so an older script can read a newer file
             }
             next
@@ -1273,7 +1285,8 @@ load_game_fixes() {
                 files) GAME_FILES_LIST=$_gf_c ;;
                 config) GAME_FILES_CONFIG=$_gf_c ;;
                 backup) GAME_FILES_BACKUP=$_gf_c ;;
-                dll_override) GAME_FILES_OVERRIDE=$_gf_c ;;
+                dll_override) [ -n "$GAME_FILES_OVERRIDE" ] || GAME_FILES_OVERRIDE=$_gf_c ;;
+                dll_overrides) GAME_FILES_OVERRIDE=$_gf_c ;; # wins over dll_override, which is for older scripts
             esac
             continue
         fi
@@ -1518,14 +1531,22 @@ apply_game_fix_files() {
     _af_rc=$?
     [ -z "${GAME_FILES_ZIP_PATH:-}" ] || rm -f "$GAME_FILES_ZIP_PATH"
     if [ $_af_rc -eq 0 ]; then
-        if [ -n "$GAME_FILES_OVERRIDE" ]; then
-            GAME_FIXES_REGISTRY="${GAME_FIXES_REGISTRY}HKCU\\Software\\Wine\\DllOverrides|$GAME_FILES_OVERRIDE|sz|native,builtin$_gf_nl"
-        fi
+        _af_list=$(printf '%s' "$GAME_FILES_OVERRIDE" | tr ',' '\n')
+        while IFS= read -r _af_n; do
+            [ -n "$_af_n" ] || continue
+            GAME_FIXES_REGISTRY="${GAME_FIXES_REGISTRY}HKCU\\Software\\Wine\\DllOverrides|$_af_n|sz|native,builtin$_gf_nl"
+        done <<EOL
+$_af_list
+EOL
     else
         log_warning "Game fixes: the game keeps ZOOM's own files"
-        if [ -n "$GAME_FILES_OVERRIDE" ]; then
-            GAME_FIXES_REGISTRY_DELETE="${GAME_FIXES_REGISTRY_DELETE}HKCU\\Software\\Wine\\DllOverrides|$GAME_FILES_OVERRIDE$_gf_nl"
-        fi
+        _af_list=$(printf '%s' "$GAME_FILES_OVERRIDE" | tr ',' '\n')
+        while IFS= read -r _af_n; do
+            [ -n "$_af_n" ] || continue
+            GAME_FIXES_REGISTRY_DELETE="${GAME_FIXES_REGISTRY_DELETE}HKCU\\Software\\Wine\\DllOverrides|$_af_n$_gf_nl"
+        done <<EOL
+$_af_list
+EOL
     fi
 }
 
