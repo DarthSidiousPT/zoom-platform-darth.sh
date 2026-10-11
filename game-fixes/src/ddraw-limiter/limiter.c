@@ -4,7 +4,7 @@
  * ddraw-darth.ini next to this DLL says).
  *
  * Copyright (c) 2026 DarthSidiousPT, https://github.com/DarthSidiousPT/zoom-platform-darth.sh
- * BSD 3-Clause License, see the LICENSE of that repository.
+ * BSD 3-Clause License, see the LICENSE file in this folder (LICENSE-ddraw-limiter.txt in the zip).
  */
 #define WIN32_LEAN_AND_MEAN
 #define INITGUID

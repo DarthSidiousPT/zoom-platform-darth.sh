@@ -55,4 +55,7 @@ To go back, copy the original `ddraw.dll` over ours and delete the override (`re
 
 ## License
 
-BSD 3-Clause, the same as the rest of this repository. The file carries a copyright notice and the repository URL, in its version information and as a plain string.
+BSD 3-Clause, see the `LICENSE` in this folder. It is a separate file from the one at the root of the repository, which
+names ZOOM Platform as the copyright holder of the original project; this DLL is new code with its own copyright line.
+The zip carries the same text as `LICENSE-ddraw-limiter.txt`, and the DLL has the copyright and the repository URL in its
+version information and as a plain string.

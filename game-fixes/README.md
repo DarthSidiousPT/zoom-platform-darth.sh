@@ -23,7 +23,7 @@ sha512sum ddraw-limiter-1.0.zip
 It prints the fingerprint, then spaces and the file's name:
 
 ```
-63a650da639c99afb31aa676cc776a3e10a2ce7e88c93bb8799876fccfc1ca77973d1e69b7c2788b774a730eec32a4b71ce23a9ff3711b7664032032aaa7ef73  ddraw-limiter-1.0.zip
+5ef51856b052127390349a6a5a5190b1819504825599715677ed5c388aaae555188da9193b36ee037900a5ae0ac4459327fa83465c775683ca2178ed8f2927c4  ddraw-limiter-1.0.zip
 ```
 
 Copy only the 128 characters before the spaces. To print just those, add `| cut -d ' ' -f1`:
