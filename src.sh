@@ -1642,18 +1642,13 @@ done
 
 cd / 2>/dev/null || true
 
+_c_ok='' _c_title='' _c_warn='' _c_err='' _c_off=''
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     _c_ok=$(printf '\033[32m')
     _c_title=$(printf '\033[32;1m')
     _c_warn=$(printf '\033[33;1m')
     _c_err=$(printf '\033[31;1m')
     _c_off=$(printf '\033[0m')
-else
-    _c_ok=''
-    _c_title=''
-    _c_warn=''
-    _c_err=''
-    _c_off=''
 fi
 
 # Built from two printf args so ShellCheck does not expand the ~
@@ -1669,6 +1664,14 @@ _failures=0
 say_removed() { printf '  %sremoved%s  %s\n' "$_c_ok" "$_c_off" "$(show_path "$1")"; }
 say_kept()    { printf '  %skept%s     %s (%s)\n' "$_c_warn" "$_c_off" "$(show_path "$1")" "$2"; }
 say_failed()  { printf '  %sFAILED%s   %s\n' "$_c_err" "$_c_off" "$(show_path "$1")"; _failures=$((_failures + 1)); }
+remove_item() {
+    rm -rf "$1" 2>/dev/null
+    if [ -e "$1" ] || [ -L "$1" ]; then
+        say_failed "$1"
+    else
+        say_removed "$1"
+    fi
+}
 
 wait_for_key() {
     [ -t 0 ] || return 0
@@ -1910,25 +1913,13 @@ while IFS= read -r _group; do
         [ -n "$_desktopfile" ] || continue
         case "$(readlink "$_desktopfile")" in
             "$APPLICATIONS_ROOT/$_group"/*)
-                rm -f "$_desktopfile" 2>/dev/null
-                if [ -e "$_desktopfile" ] || [ -L "$_desktopfile" ]; then
-                    say_failed "$_desktopfile"
-                else
-                    say_removed "$_desktopfile"
-                fi
+                remove_item "$_desktopfile"
                 ;;
         esac
     done <<LNKEOF
 $(list_desktop_links)
 LNKEOF
-    if [ -e "$APPLICATIONS_ROOT/$_group" ]; then
-        rm -rf "${APPLICATIONS_ROOT:?}/$_group" 2>/dev/null
-        if [ -e "$APPLICATIONS_ROOT/$_group" ]; then
-            say_failed "$APPLICATIONS_ROOT/$_group"
-        else
-            say_removed "$APPLICATIONS_ROOT/$_group"
-        fi
-    fi
+    [ -e "$APPLICATIONS_ROOT/$_group" ] && remove_item "${APPLICATIONS_ROOT:?}/$_group"
     # Wine's own folder for this group is shared with other wine programs: only removed while empty
     if [ -d "$WINE_MENU_ROOT/$_group" ]; then
         rmdir "$WINE_MENU_ROOT/$_group" 2>/dev/null
@@ -1942,32 +1933,13 @@ done <<GRPEOF
 $ICON_GROUPS
 GRPEOF
 
-if [ -d "$LAUNCH_SCRIPTS_PATH/$ZOOM_GUID" ]; then
-    rm -rf "${LAUNCH_SCRIPTS_PATH:?}/$ZOOM_GUID" 2>/dev/null
-    if [ -e "$LAUNCH_SCRIPTS_PATH/$ZOOM_GUID" ]; then
-        say_failed "$LAUNCH_SCRIPTS_PATH/$ZOOM_GUID"
-    else
-        say_removed "$LAUNCH_SCRIPTS_PATH/$ZOOM_GUID"
-    fi
-fi
+[ -d "$LAUNCH_SCRIPTS_PATH/$ZOOM_GUID" ] && remove_item "${LAUNCH_SCRIPTS_PATH:?}/$ZOOM_GUID"
 
-if [ -e "$INSTALL_PATH" ]; then
-    rm -rf "$INSTALL_PATH" 2>/dev/null
-    if [ -e "$INSTALL_PATH" ]; then
-        say_failed "$INSTALL_PATH"
-    else
-        say_removed "$INSTALL_PATH"
-    fi
-fi
+[ -e "$INSTALL_PATH" ] && remove_item "$INSTALL_PATH"
 
 if [ -n "$_proton_name" ] && [ -d "$PROTON_COMPAT_DIR/$_proton_name" ]; then
     if [ "$_remove_proton" -eq 1 ]; then
-        rm -rf "${PROTON_COMPAT_DIR:?}/$_proton_name" 2>/dev/null
-        if [ -e "$PROTON_COMPAT_DIR/$_proton_name" ]; then
-            say_failed "$PROTON_COMPAT_DIR/$_proton_name"
-        else
-            say_removed "$PROTON_COMPAT_DIR/$_proton_name"
-        fi
+        remove_item "${PROTON_COMPAT_DIR:?}/$_proton_name"
     else
         say_kept "$PROTON_COMPAT_DIR/$_proton_name" "$_keep_why"
     fi
