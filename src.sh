@@ -475,21 +475,7 @@ check_installer_slices() {
 }
 
 is_valid_prefix() {
-    _wine_prefix="$1"
-
-    [ ! -d "$_wine_prefix" ] && return 1
-
-    _required_dirs="drive_c dosdevices"
-    _required_files="system.reg user.reg"
-    for dir in $_required_dirs; do
-        [ ! -d "$_wine_prefix/$dir" ] && return 1
-    done
-
-    for f in $_required_files; do
-        [ ! -f "$_wine_prefix/$f" ] && return 1
-    done
-
-    return 0
+    [ -d "$1" ] && [ -d "$1/drive_c" ] && [ -d "$1/dosdevices" ] && [ -f "$1/system.reg" ] && [ -f "$1/user.reg" ]
 }
 
 # Loose on purpose: several lines come back when more than one game is installed
@@ -512,50 +498,23 @@ get_prefix_reg_val() {
 
 # $3 (optional): the Inno AppId, since old installers never write a Site GUID
 prefix_has_game() {
-    _wine_prefix="$1"
-    _guid="$2"
-    _appid="${3:-}"
-
-    if ! is_valid_prefix "$_wine_prefix"; then
-        return 1
-    else
-        _r=1
-        _tmp=$(mktemp)
-        get_prefix_reg_val "$_wine_prefix" "Site GUID" > "$_tmp"
-        while read -r line; do
-            if [ "$line" = "$_guid" ]; then
-                _r=0
-                break
-            fi
-        done < "$_tmp"
-        rm -f "$_tmp"
-        if [ $_r -ne 0 ] && [ -n "$_appid" ] && [ -r "$_wine_prefix/system.reg" ] &&
-            awk -v id="$_appid" '
-                BEGIN { want = tolower("\\Uninstall\\\\{" id "}_is1]") }
-                index(tolower($0), want) { found = 1; exit }
-                END { exit !found }
-            ' "$_wine_prefix/system.reg"; then
-            _r=0
-        fi
-        return $_r
-    fi
+    is_valid_prefix "$1" || return 1
+    get_prefix_reg_val "$1" "Site GUID" | grep -qxF -- "$2" && return 0
+    [ -n "${3:-}" ] && [ -r "$1/system.reg" ] &&
+        awk -v id="$3" '
+            BEGIN { want = tolower("\\Uninstall\\\\{" id "}_is1]") }
+            index(tolower($0), want) { found = 1; exit }
+            END { exit !found }
+        ' "$1/system.reg"
 }
 
 prefix_has_any_game() {
-    _wine_prefix="$1"
-
-    _r=1
-    _tmp=$(mktemp)
-    get_prefix_reg_val "$_wine_prefix" "InstallPath" > "$_tmp"
-
     while read -r line; do
-        if [ -d "$(PROTON_VERB=getnativepath umu_launch "$line")" ]; then
-            _r=0
-            break
-        fi
-    done < "$_tmp"
-    rm -f "$_tmp"
-    return $_r
+        [ -d "$(PROTON_VERB=getnativepath umu_launch "$line")" ] && return 0
+    done <<EOL
+$(get_prefix_reg_val "$1" "InstallPath")
+EOL
+    return 1
 }
 
 _lnk_read_block() {
@@ -735,6 +694,7 @@ EOL
 
 # Wine keeps one .desktop per name for the whole prefix: older than zoom_install_started isn't from this run
 is_desktop_from_this_run() {
+    [ -f "$1" ] || return 1
     _fr_marker="$INSTALL_PATH/drive_c/zoom_install_started"
     # Without the marker there's no telling, so trust what's there
     [ -f "$_fr_marker" ] || return 0
@@ -782,7 +742,7 @@ ensure_proton_shortcuts() {
         INSTALL_SHORTCUTS="$INSTALL_SHORTCUTS$_sc_name|"
 
         _sc_desktop="$PROTON_SHORTCUTS_PATH/$_sc_name.desktop"
-        if [ -f "$_sc_desktop" ] && is_desktop_from_this_run "$_sc_desktop"; then
+        if is_desktop_from_this_run "$_sc_desktop"; then
             is_skipped_shortcut "$(get_desktop_value "StartupWMClass" "$_sc_desktop")" "$_sc_name" && continue
             SHORTCUTS_KEPT=$((SHORTCUTS_KEPT+1))
             continue
@@ -839,7 +799,7 @@ EOL
     while IFS= read -r _sc_win; do
         [ -n "$_sc_win" ] || continue
         _sc_name=$(get_lnk_name "$_sc_win")
-        { [ -f "$PROTON_SHORTCUTS_PATH/$_sc_name.desktop" ] && is_desktop_from_this_run "$PROTON_SHORTCUTS_PATH/$_sc_name.desktop"; } || \
+        is_desktop_from_this_run "$PROTON_SHORTCUTS_PATH/$_sc_name.desktop" || \
             log_error "Couldn't create a launcher for the shortcut \"$_sc_name\" ($_sc_win). See $_sc_log"
     done <<EOL
 $_sc_missing
@@ -1000,10 +960,9 @@ parse_game_fixes() {
             next
         }
         in_reg { print registry_line(trim($0)); next }
+        { eq = index($0, "="); k = trim(substr($0, 1, eq - 1)); v = trim(substr($0, eq + 1)) }
         in_files {
-            if (index($0, "=")) {
-                k = trim(substr($0, 1, index($0, "=") - 1))
-                v = trim(substr($0, index($0, "=") + 1))
+            if (eq) {
                 if (k == "zip") f_zip = v
                 else if (k == "zip_sha512") f_sha = v
                 else if (k == "files") f_list = v
@@ -1015,17 +974,13 @@ parse_game_fixes() {
             }
             next
         }
-        !open && index($0, "=") {
-            k = trim(substr($0, 1, index($0, "=") - 1))
-            v = trim(substr($0, index($0, "=") + 1))
+        !open && eq {
             if (k == "proton") g_tag = v
             else if (k == "proton_asset") g_asset = v
             else if (k == "proton_sha512") g_sha = v
             next
         }
-        open && index($0, "=") {
-            k = trim(substr($0, 1, index($0, "=") - 1))
-            v = trim(substr($0, index($0, "=") + 1))
+        open && eq {
             if (k == "replaces") replaces = v
             else if (k == "exe") exe = v
             else if (k == "workdir") workdir = v
@@ -1234,6 +1189,21 @@ get_game_folder() {
     printf '%s\n' "$INSTALL_PATH/drive_c/$_gp_rel"
 }
 
+csv() {
+    printf '%s' "$1" | tr ',' ' '
+}
+
+copy_fix_file() {
+    if cp "$1/$3" "$2/.$3.zoom-new" && mv -f "$2/.$3.zoom-new" "$2/$3"; then
+        log_info "Game fixes: copied $3"
+    else
+        rm -f "$2/.$3.zoom-new"
+        log_warning "Game fixes: couldn't copy $3 into $2"
+        return 1
+    fi
+}
+
+# shellcheck disable=SC2046
 game_fix_files_copy() {
     if [ -z "${GAME_FILES_ZIP_PATH:-}" ]; then
         return 1 # fetch_game_fix_zip has said why
@@ -1258,26 +1228,20 @@ game_fix_files_copy() {
         return 1
     fi
 
-    _cf_all=$(printf '%s,%s' "$GAME_FILES_LIST" "$GAME_FILES_CONFIG" | tr ',' '\n')
     _cf_bad=0
     # Check every source before touching the game folder
-    while IFS= read -r _cf_n; do
-        [ -n "$_cf_n" ] || continue
+    for _cf_n in $(csv "$GAME_FILES_LIST,$GAME_FILES_CONFIG"); do
         if [ ! -f "$_cf_tmp/$_cf_n" ] || [ -L "$_cf_tmp/$_cf_n" ]; then
             log_warning "Game fixes: $GAME_FILES_ZIP has no plain file called \"$_cf_n\""
             _cf_bad=1
         fi
-    done <<EOL
-$_cf_all
-EOL
+    done
     if [ $_cf_bad -ne 0 ]; then
         rm -rf "$_cf_tmp"
         return 1
     fi
 
-    _cf_list=$(printf '%s' "$GAME_FILES_BACKUP" | tr ',' '\n')
-    while IFS= read -r _cf_n; do
-        [ -n "$_cf_n" ] || continue
+    for _cf_n in $(csv "$GAME_FILES_BACKUP"); do
         if [ -f "$_cf_dir/$_cf_n" ] && [ ! -e "$_cf_dir/$_cf_n.orig" ]; then
             if cp -p "$_cf_dir/$_cf_n" "$_cf_dir/$_cf_n.orig"; then
                 log_info "Game fixes: kept the original $_cf_n as $_cf_n.orig"
@@ -1286,65 +1250,38 @@ EOL
                 _cf_bad=1
             fi
         fi
-    done <<EOL
-$_cf_list
-EOL
-    _cf_list=$(printf '%s' "$GAME_FILES_LIST" | tr ',' '\n')
-    while [ $_cf_bad -eq 0 ] && IFS= read -r _cf_n; do
-        [ -n "$_cf_n" ] || continue
-        if cp "$_cf_tmp/$_cf_n" "$_cf_dir/.$_cf_n.zoom-new" && mv -f "$_cf_dir/.$_cf_n.zoom-new" "$_cf_dir/$_cf_n"; then
-            log_info "Game fixes: copied $_cf_n"
-        else
-            rm -f "$_cf_dir/.$_cf_n.zoom-new"
-            log_warning "Game fixes: couldn't copy $_cf_n into $_cf_dir"
-            _cf_bad=1
-        fi
-    done <<EOL
-$_cf_list
-EOL
-    _cf_list=$(printf '%s' "$GAME_FILES_CONFIG" | tr ',' '\n')
-    while [ $_cf_bad -eq 0 ] && IFS= read -r _cf_n; do
-        [ -n "$_cf_n" ] || continue
+    done
+    for _cf_n in $(csv "$GAME_FILES_LIST"); do
+        [ $_cf_bad -eq 0 ] || break
+        copy_fix_file "$_cf_tmp" "$_cf_dir" "$_cf_n" || _cf_bad=1
+    done
+    for _cf_n in $(csv "$GAME_FILES_CONFIG"); do
+        [ $_cf_bad -eq 0 ] || break
         if [ -e "$_cf_dir/$_cf_n" ]; then
             log_info "Game fixes: kept your $_cf_n"
-        elif cp "$_cf_tmp/$_cf_n" "$_cf_dir/.$_cf_n.zoom-new" && mv -f "$_cf_dir/.$_cf_n.zoom-new" "$_cf_dir/$_cf_n"; then
-            log_info "Game fixes: copied $_cf_n"
         else
-            rm -f "$_cf_dir/.$_cf_n.zoom-new"
-            log_warning "Game fixes: couldn't copy $_cf_n into $_cf_dir"
-            _cf_bad=1
+            copy_fix_file "$_cf_tmp" "$_cf_dir" "$_cf_n" || _cf_bad=1
         fi
-    done <<EOL
-$_cf_list
-EOL
+    done
     rm -rf "$_cf_tmp"
     [ $_cf_bad -eq 0 ]
 }
 
 # Override is queued for removal when the copy failed: ZOOM's installer put its own DLL back and a leftover override would load it as native (crash)
+# shellcheck disable=SC2046
 apply_game_fix_files() {
     [ -n "$GAME_FILES_ZIP" ] || return 0
     game_fix_files_copy
     _af_rc=$?
     [ -z "${GAME_FILES_ZIP_PATH:-}" ] || rm -f "$GAME_FILES_ZIP_PATH"
-    if [ $_af_rc -eq 0 ]; then
-        _af_list=$(printf '%s' "$GAME_FILES_OVERRIDE" | tr ',' '\n')
-        while IFS= read -r _af_n; do
-            [ -n "$_af_n" ] || continue
+    [ $_af_rc -eq 0 ] || log_warning "Game fixes: the game keeps ZOOM's own files"
+    for _af_n in $(csv "$GAME_FILES_OVERRIDE"); do
+        if [ $_af_rc -eq 0 ]; then
             GAME_FIXES_REGISTRY="${GAME_FIXES_REGISTRY}HKCU\\Software\\Wine\\DllOverrides|$_af_n|sz|native,builtin$NL"
-        done <<EOL
-$_af_list
-EOL
-    else
-        log_warning "Game fixes: the game keeps ZOOM's own files"
-        _af_list=$(printf '%s' "$GAME_FILES_OVERRIDE" | tr ',' '\n')
-        while IFS= read -r _af_n; do
-            [ -n "$_af_n" ] || continue
+        else
             GAME_FIXES_REGISTRY_DELETE="${GAME_FIXES_REGISTRY_DELETE}HKCU\\Software\\Wine\\DllOverrides|$_af_n$NL"
-        done <<EOL
-$_af_list
-EOL
-    fi
+        fi
+    done
 }
 
 get_sha512() {
@@ -2361,8 +2298,10 @@ if [ "$GAME_GUID_FROM" != installer ]; then
 fi
 
 # The destination must be empty, or a wine prefix with the same game (update) or, for DLC, some ZOOM game
+PREFIX_HAS_GAME=0
 if is_valid_prefix "$INSTALL_PATH"; then
     if prefix_has_game "$INSTALL_PATH" "$ZOOM_GUID" "$INNO_APPID"; then
+        PREFIX_HAS_GAME=1
         log_info "Detected the same game installed in this prefix! [$ZOOM_GUID]"
     else
         if prefix_has_any_game "$INSTALL_PATH"; then
@@ -2398,7 +2337,7 @@ EOL
 
 # These reg values must exist before the installer runs, to skip the directory page and the Windows shortcuts
 
-if [ $IS_DLC -eq 0 ] && ! prefix_has_game "$INSTALL_PATH" "$ZOOM_GUID" "$INNO_APPID"; then
+if [ $IS_DLC -eq 0 ] && [ $PREFIX_HAS_GAME -eq 0 ]; then
     cat >"$INSTALL_PATH/drive_c/zoom_regkeys.bat" <<EOL
 @echo off
 REM We do a check cause we don't want to overwrite in case of an update that changes the default installation directory.
@@ -2434,7 +2373,7 @@ _header_icon_count=$(get_header_val 'icon_count')
 _filecount=$(( ${_header_file_count:-0} + ${_header_icon_count:-0} ))
 _readlog=1
 while [ $_readlog -eq 1 ]; do
-    sleep 0.010
+    sleep 0.1
     while read -r line || [ -n "$line" ]; do
         case $line in
             *"Dest filename: "*)
@@ -2571,13 +2510,7 @@ _icon_groups="$(
     {
         get_prefix_reg_val "$INSTALL_PATH" 'IconGroup'
         printf '%s\n' "$GAME_NAME_SAFE"
-    } | sort -u | while IFS= read -r _g; do
-        case "$_g" in
-            "" | . | ..) continue ;;
-            */*) continue ;;
-        esac
-        printf '%s\n' "$_g"
-    done
+    } | sort -u | grep -vE '^[.]{0,2}$|/'
 )"
 
 write_uninstaller "$_icon_groups"
