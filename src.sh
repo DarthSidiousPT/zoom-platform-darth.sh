@@ -353,7 +353,7 @@ test_dest_writable() {
     # shellcheck disable=SC2016
     _tdw_script='
         _p=$1
-        # Walk up to the first existing parent (dirname of "." and "/" is itself, so stop there)
+        # dirname of "." and "/" is itself, so stop there
         while [ ! -e "$_p" ]; do
             _parent=$(dirname "$_p")
             [ "$_parent" = "$_p" ] && break
@@ -884,32 +884,26 @@ EOL
 parse_game_fixes() {
     awk '
         function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
-        # Does s hold any of the characters in set?
         function has_any(s, set,    i) {
             for (i = 1; i <= length(set); i++)
                 if (index(s, substr(set, i, 1))) return 1
             return 0
         }
-        # Is every character of s in set?
         function only(s, set,    i) {
             for (i = 1; i <= length(s); i++)
                 if (!index(set, substr(s, i, 1))) return 0
             return 1
         }
-        # Names end up in file names, in .desktop files and in the lines printed below
         function bad_name(s) { return s == "" || s ~ /^[.]/ || has_any(s, "/|\\\"$`\t\r") }
-        # A Windows path below the game folder: no drive, no "..", no empty parts
         function bad_path(p,    q) {
             if (!only(p, ALNUM " ._()+,-\\")) return "has characters that are not allowed"
             q = p
-            gsub(/\\/, "/", q) # from here on a plain / separates the parts
+            gsub(/\\/, "/", q)
             if (q ~ /^\// || q ~ /\/$/ || q ~ /\/\// || q ~ /(^|\/)[.][.](\/|$)/) return "is not a plain relative path"
             return ""
         }
-        # One line of the [registry] section: "<root>\Software\<key>\<name> = <type>:<data>". Wine is
-        # no sandbox, so this is a best-effort block list of the keys that start programs or
-        # register code. A 32-bit game reads HKLM\Software\WOW6432Node, so the file names that
-        # path itself.
+        # Wine is no sandbox: a best-effort block list of the keys that start programs or register code. A 32-bit game reads
+        # HKLM\Software\WOW6432Node, so the file names that path itself.
         function registry_line(line,    eq, path, spec, n, p, q, i, c, root, type, data, key, name, r) {
             eq = index(line, "=")
             if (eq == 0) return "!|" safe(line) "|a registry line must be: path = type:data"
@@ -918,7 +912,7 @@ parse_game_fixes() {
             r = bad_path(path)
             if (r != "") return "!|" safe(path) "|the path " r
             q = path
-            gsub(/\\/, "/", q) # a plain / separates the parts, as in bad_path
+            gsub(/\\/, "/", q)
             n = split(q, p, "/")
             root = toupper(p[1])
             if (root != "HKCU" && root != "HKLM") return "!|" safe(path) "|the path must start with HKCU\\ or HKLM\\"
@@ -948,9 +942,7 @@ parse_game_fixes() {
             sub(/^[^\\]*/, root, key)
             return "@|" key "|" name "|" type "|" data
         }
-        # A name or line for a message: it can not hold the | separator
         function safe(s) { gsub(/[|]/, "?", s); return s }
-        # Prints the launcher collected so far, if there is one
         function finish(    why, r, n) {
             if (!open) return
             why = ""
@@ -965,9 +957,7 @@ parse_game_fixes() {
             if (why != "") print "!|" n "|" why
             else print name "|" replaces "|" exe "|" workdir "|" args
         }
-        # Prints the pinned Proton build from the keys before the first section. Tag and asset end
-        # up in a URL and a path, so they must follow GloriousEggroll naming; the checksum is what
-        # makes the download trustworthy.
+        # Tag and asset end up in a URL and a path, so they must follow GloriousEggroll naming; the checksum makes the download trustworthy
         function game_wide(    why) {
             if (g_tag == "" && g_asset == "" && g_sha == "") return
             why = ""
@@ -978,8 +968,7 @@ parse_game_fixes() {
             if (why != "") print "!|proton|" why
             else print "|proton|" g_tag "|" g_asset "|" g_sha
         }
-        # A comma separated list of plain file names (no folders). Leaves the list without spaces
-        # in NORM and returns "" when it is fine, else the reason.
+        # Leaves the list without spaces in NORM and returns the reason, or empty when it is fine
         function bad_filelist(list,    n, parts, i, one) {
             NORM = ""
             n = split(list, parts, ",")
@@ -991,10 +980,7 @@ parse_game_fixes() {
             }
             return ""
         }
-        # Is the name in the comma separated list?
         function in_list(name, list) { return index("," list ",", "," name ",") > 0 }
-        # Prints the [files] section. A zip off the network is only copied from by file name, so
-        # every name is checked here and the checksum decides whether the zip is the right one.
         function files_out(    why, n, parts, i, nf, nc, nb, no, one) {
             if (f_zip == "" && f_sha == "" && f_list == "" && f_config == "" && f_backup == "" && f_over == "" && f_overs == "") return
             why = ""
@@ -1034,9 +1020,9 @@ parse_game_fixes() {
         BEGIN {
             ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         }
-        { sub(/\r$/, "") } # a file saved on Windows
+        { sub(/\r$/, "") }
         /^[ \t]*[#;]/ || /^[ \t]*$/ { next }
-        /^[ \t]*\[.*\][ \t]*$/ { # [launcher name] starts a launcher, [wine registry] the registry values
+        /^[ \t]*\[.*\][ \t]*$/ {
             finish()
             h = trim($0)
             name = trim(substr(h, 2, length(h) - 2))
@@ -1062,7 +1048,7 @@ parse_game_fixes() {
             }
             next
         }
-        !open && index($0, "=") { # before the first section: keys for the whole game
+        !open && index($0, "=") {
             k = trim(substr($0, 1, index($0, "=") - 1))
             v = trim(substr($0, index($0, "=") + 1))
             if (k == "proton") g_tag = v
@@ -1574,8 +1560,6 @@ pinned_proton_launch_lines() {
     _pl_note=$(quote_sq "${_pl_ver%-x86_64} removed. Reinstall the game.")
     # Notifiers in order: notify-send, gdbus, dbus-send, kdialog, zenity (Pop!_OS has no notify-send); GNOME shows ~40 characters, so a short text
     printf '%s\n' \
-        "# This game is pinned to a tested Proton build. If that folder was removed, umu's own" \
-        "# Proton is used instead. Nothing is downloaded here." \
         "if [ -f '$ZOOM_PROTONPATH/toolmanifest.vdf' ]; then" \
         "    export PROTONPATH='$ZOOM_PROTONPATH'" \
         "else" \
@@ -1761,7 +1745,6 @@ done
 
 cd / 2>/dev/null || true
 
-# Colours only on a terminal, unless NO_COLOR is set
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     _c_ok=$(printf '\033[32m')
     _c_title=$(printf '\033[32;1m')
@@ -1776,8 +1759,7 @@ else
     _c_off=''
 fi
 
-# Replaces a leading $HOME with ~ for display. Built from two printf args so ShellCheck
-# doesn't expand the ~
+# Built from two printf args so ShellCheck does not expand the ~
 show_path() {
     case "$1" in
         "$HOME"/*) printf '%s/%s' '~' "${1#"$HOME"/}" ;;
@@ -1791,8 +1773,6 @@ say_removed() { printf '  %sremoved%s  %s\n' "$_c_ok" "$_c_off" "$(show_path "$1
 say_kept()    { printf '  %skept%s     %s (%s)\n' "$_c_warn" "$_c_off" "$(show_path "$1")" "$2"; }
 say_failed()  { printf '  %sFAILED%s   %s\n' "$_c_err" "$_c_off" "$(show_path "$1")"; _failures=$((_failures + 1)); }
 
-# Waits for a keypress so a file manager's terminal window doesn't close before the result can
-# be read, only when stdin is a terminal. Ctrl+C still works; a trap restores the terminal.
 wait_for_key() {
     [ -t 0 ] || return 0
     printf 'Press any key to close...'
@@ -1804,7 +1784,6 @@ wait_for_key() {
     trap 'stty "$_wfk_tty" 2>/dev/null; exit 130' INT TERM
     stty -icanon -echo min 1 time 0 2>/dev/null
     dd bs=1 count=1 2>/dev/null >/dev/null
-    # Drain the rest of a multi-byte key (arrows) so it doesn't reach the shell prompt
     stty min 0 time 1 2>/dev/null
     dd bs=1 count=8 2>/dev/null >/dev/null
     stty "$_wfk_tty" 2>/dev/null
@@ -1812,12 +1791,6 @@ wait_for_key() {
     printf '\n'
 }
 
-# Prints the GE-Proton builds that this script downloaded (they hold the $PROTON_NOTE file) and
-# that no game needs any more, one folder name per line. $1: a prefix to leave out, the one
-# being uninstalled. A build is kept when a ZOOM game's prefix names it in drive_c/zoom_proton,
-# or when Steam's config.vdf mentions it (read only; the shared folder may hold a Steam game's
-# build). A launcher link that leads nowhere may be a game on a disk that isn't mounted and
-# could need any build, so then nothing is printed. Same text in uninstall.sh: keep them equal.
 find_unused_protons() {
     # Physical path, so a trailing slash or a symlink in the path still matches
     _fu_skip=''
@@ -1876,7 +1849,6 @@ printf '%s%s%s\n' "$_c_title" "$_title_line" "$_c_off"
 printf '%s\n' "$(printf '%s' "$_title_line" | sed 's/./=/g')"
 printf '\n'
 
-# Other groups in this prefix (base game + DLC), so the user sees what else goes
 _other_groups=''
 while IFS= read -r _g; do
     [ -n "$_g" ] || continue
@@ -1901,15 +1873,13 @@ GRPEOF
     printf '\n'
 fi
 
-# The Desktop folder can move after the install (language change, edited user-dirs.dirs), so
-# look in the baked-in one and wherever it is now
+# The Desktop folder can move after the install: look in the baked-in one and wherever it is now
 DESKTOP_DIRS=$DESKTOP_DIR
 _now_desktop=$(xdg-user-dir DESKTOP 2>/dev/null)
 if [ -d "$_now_desktop" ] && [ "$_now_desktop" != "$DESKTOP_DIR" ]; then
     DESKTOP_DIRS="$DESKTOP_DIRS
 $_now_desktop"
 fi
-# Prints every Desktop symlink to a .desktop file, one per line
 list_desktop_links() {
     while IFS= read -r _ld_dir; do
         [ -n "$_ld_dir" ] || continue
@@ -1921,7 +1891,6 @@ $DESKTOP_DIRS
 DDEOF
 }
 
-# Preview of what exists, buffered to choose between "This will delete:" and "Nothing left"
 _preview=''
 _savegames_needed=0
 if [ -d "$INSTALL_PATH" ]; then
@@ -1966,8 +1935,6 @@ if [ -d "$LAUNCH_SCRIPTS_PATH/$ZOOM_GUID" ]; then
 "
 fi
 
-# The GE-Proton build this game runs on is offered separately (after the game's own y/N), but
-# only when this script downloaded it and no other game needs it
 _proton_name=''
 _pn=''
 if [ -f "$INSTALL_PATH/drive_c/zoom_proton" ]; then
@@ -1982,7 +1949,6 @@ _proton_label=$_proton_name
 if [ -n "$_proton_name" ]; then
     _du_kb=$(du -sk "$PROTON_COMPAT_DIR/$_proton_name" 2>/dev/null | cut -f1)
     _proton_mb=$(( ${_du_kb:-0} / 1024 ))
-    # Without the architecture, to read better: GE-Proton11-7
     _proton_label=${_proton_name%-x86_64}
 fi
 
@@ -2021,8 +1987,7 @@ else
 fi
 printf '\n'
 
-# Its own question, so the build can stay while the game goes. Anything but y, or no answer at
-# all (piped input that ran out), keeps it.
+# Anything but y, or no answer at all (piped input that ran out), keeps it
 _remove_proton=0
 _keep_why='you chose to keep it'
 if [ -n "$_proton_name" ]; then
@@ -2110,7 +2075,6 @@ if [ -n "$_proton_name" ] && [ -d "$PROTON_COMPAT_DIR/$_proton_name" ]; then
         say_kept "$PROTON_COMPAT_DIR/$_proton_name" "$_keep_why"
     fi
 elif [ "$_opt_remove_proton" -eq 1 ]; then
-    # Asked for, but the rules say it stays: say so, or it would look like the option was ignored
     if [ -n "$_pn" ] && [ -d "$PROTON_COMPAT_DIR/$_pn" ]; then
         say_kept "$PROTON_COMPAT_DIR/$_pn" "still used by another game, or not downloaded by this script"
     else
@@ -2118,7 +2082,6 @@ elif [ "$_opt_remove_proton" -eq 1 ]; then
     fi
 fi
 
-# Remove the now empty parents. Fails harmlessly while other games are installed.
 rmdir "$APPLICATIONS_ROOT" "$LAUNCH_SCRIPTS_PATH" 2>/dev/null
 
 printf '\n'
