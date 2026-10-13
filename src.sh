@@ -16,11 +16,14 @@ LAUNCH_SCRIPTS_PATH="$HOME"/.local/share/zoom-platform
 APPLICATIONS_ROOT="$HOME"/.local/share/applications/zoom-platform
 WINE_MENU_ROOT="$HOME"/.local/share/applications/wine/Programs
 UMU_BIN=umu-run
+UMU_FLATPAK=org.openwinecomponents.umu.umu-launcher
 CACHE_DIR="$HOME"/.cache/zoom-platform
 PROTON_COMPAT_DIR="$HOME"/.local/share/Steam/compatibilitytools.d
 PROTON_NOTE=.zoom-platform-downloaded
 PROTON_GE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download"
 ZOOM_PROTONPATH=''
+NL='
+'
 
 DESKTOP_DIR="$(xdg-user-dir DESKTOP 2> /dev/null)"
 [ -d "$DESKTOP_DIR" ] || DESKTOP_DIR="$HOME/Desktop"
@@ -35,7 +38,7 @@ mkdir -p "$CACHE_DIR"
 # ShellCheck chokes on the base64 blob, so DEV mode loads the binary from the working dir
 get_innoext_string() {
     if [ $INSTALLER_VERSION = "DEV" ]; then
-        printf '%s' "$(base64 -w 0 innoextract)"
+        base64 -w 0 innoextract
     else
         printf '%s' "$INNOEXTRACT_BINARY_B64"
     fi
@@ -143,13 +146,12 @@ log_info() {
 }
 
 base64_dec() {
-    _input="$1"
     if command -v base64 > /dev/null; then
-        printf '%s' "$_input" | base64 -d 2>/dev/null || return 1
+        base64 -d 2>/dev/null
     elif command -v openssl > /dev/null; then
-        printf '%s' "$_input" | openssl enc -d -base64 -A 2>/dev/null || return 1
+        openssl enc -d -base64 -A 2>/dev/null
     elif command -v python3 > /dev/null; then
-        printf '%s' "$_input" | python3 -m base64 -d 2>/dev/null || return 1
+        python3 -m base64 -d 2>/dev/null
     else
         return 1
     fi
@@ -158,12 +160,23 @@ base64_dec() {
 validate_uuid() {
     _input="$1"
     _uuid_pattern="^[0-9a-fA-F]\{8\}-[0-9a-fA-F]\{4\}-[0-9a-fA-F]\{4\}-[0-9a-fA-F]\{4\}-[0-9a-fA-F]\{12\}$"
-    expr "$_input" : "$_uuid_pattern" > /dev/null && return 0
-    return 1
+    expr "$_input" : "$_uuid_pattern" > /dev/null
 }
 
 trim_string() {
     awk '{$1=$1;print}'
+}
+
+lower() {
+    tr '[:upper:]' '[:lower:]'
+}
+
+http() {
+    curl -H "User-Agent: $HTTP_USER_AGENT" "$@"
+}
+
+http_code() {
+    http -Ls --max-time 15 -o "$1" -w '%{http_code}' "$2"
 }
 
 fetch_known_guid() {
@@ -175,8 +188,7 @@ fetch_known_guid() {
     else
         rm -f "$_kg_file"
         # Not even a 404 is fine: the file always exists on main
-        _kg_code=$(curl -Ls --max-time 15 -o "$_kg_file" -w '%{http_code}' \
-            -H "User-Agent: $HTTP_USER_AGENT" "$GAME_FIXES_URL/known-guids.ini")
+        _kg_code=$(http_code "$_kg_file" "$GAME_FIXES_URL/known-guids.ini")
         _kg_exit=$?
         if [ $_kg_exit -ne 0 ] || [ "$_kg_code" != 200 ]; then
             rm -f "$_kg_file"
@@ -184,7 +196,7 @@ fetch_known_guid() {
         fi
     fi
     # The file comes off the network, so the value must be a UUID to be used
-    _kg_guid=$(awk -v id="$(printf '%s' "$_kg_appid" | tr '[:upper:]' '[:lower:]')" '
+    _kg_guid=$(awk -v id="$(printf '%s' "$_kg_appid" | lower)" '
         { sub(/\r$/, ""); sub(/[ \t]*[#;].*/, "") }
         NF == 0 { next }
         {
@@ -213,7 +225,7 @@ resolve_game_guid() {
     _rg_appid=$($INNOEXT_BIN -s --print-headers "$_rg_installer" 2> /dev/null \
         | sed -n 's/^app_id: "\(.*\)"/\1/p' | sed 's/[{}]//g' | trim_string)
     validate_uuid "$_rg_appid" || return 1
-    _rg_appid=$(printf '%s' "$_rg_appid" | tr '[:upper:]' '[:lower:]')
+    _rg_appid=$(printf '%s' "$_rg_appid" | lower)
 
     _rg_listed=$(fetch_known_guid "$_rg_appid")
     case $? in
@@ -230,7 +242,7 @@ quote_sq() {
 
 download_umu_zipapp() {
     _url="$1"
-    curl -o "$CACHE_DIR"/umu-launcher.tar.xz "$_url" -Ls -H "User-Agent: $HTTP_USER_AGENT" ||
+    http -Ls -o "$CACHE_DIR"/umu-launcher.tar.xz "$_url" ||
         fatal_error "Could not download umu-launcher. Please install it manually."
 
     if ! command -v tar > /dev/null; then
@@ -244,42 +256,25 @@ download_umu_zipapp() {
 }
 
 get_umu_url() {
-    _api_resp=$(curl -Ls -H "User-Agent: $HTTP_USER_AGENT" \
-                    'https://lutris.net/api/runtimes?format=json')
-    _api_exit=$?
-    if [ $_api_exit -eq 0 ]; then
-        _parsed_str="$(printf '%s' "$_api_resp" | awk -F'"name":"umu"' '{ split($2, urls, "url\":\""); print substr(urls[2], 1, index(urls[2], "\"")-1) }')"
-        case $_parsed_str in
-            *"umu-launcher"*)
-                printf '%s' "$_parsed_str"
-                exit 0
-                ;;
-            *)
-                exit 1
-                ;;
-        esac
-    fi
-    exit 1
+    _parsed_str=$(http -Ls 'https://lutris.net/api/runtimes?format=json' |
+        awk -F'"name":"umu"' '{ split($2, urls, "url\":\""); print substr(urls[2], 1, index(urls[2], "\"")-1) }')
+    case $_parsed_str in
+        *"umu-launcher"*) printf '%s' "$_parsed_str" ;;
+        *) return 1 ;;
+    esac
 }
 
 get_umu_id() {
-    _guid="$1"
-    _api_resp=$(curl -Ls -H "User-Agent: $HTTP_USER_AGENT" \
-                    "https://umu.openwinecomponents.org/umu_api.php?store=zoomplatform&codename=$_guid")
-    _api_exit=$?
-    if [ $_api_exit -eq 0 ]; then
-        _parsed_str="$(printf '%s' "$_api_resp" | awk -F'"umu_id":"' '{print substr($2, 1, index($2, "\"")-1)}')"
-        case $_parsed_str in
-            "umu-"*)
-                printf '%s' "$_parsed_str"
-                exit 0
-                ;;
-            *)
-                exit 1
-                ;;
-        esac
-    fi
-    exit 1
+    _parsed_str=$(http -Ls "https://umu.openwinecomponents.org/umu_api.php?store=zoomplatform&codename=$1" |
+        awk -F'"umu_id":"' '{print substr($2, 1, index($2, "\"")-1)}')
+    case $_parsed_str in
+        "umu-"*) printf '%s' "$_parsed_str" ;;
+        *) return 1 ;;
+    esac
+}
+
+native_path() {
+    (PROTON_VERB=getnativepath umu_launch "$1" < /dev/null) 2> /dev/null | head -n 1
 }
 
 get_desktop_value() {
@@ -295,7 +290,7 @@ umu_launch_command() {
         # umu rejects an empty PROTONPATH, so it is only passed while set
         # shellcheck disable=SC2016
         [ -n "$ZOOM_PROTONPATH" ] && printf '%s' ' ${PROTONPATH:+--env=PROTONPATH=$PROTONPATH}'
-        printf '%s' ' org.openwinecomponents.umu.umu-launcher'
+        printf ' %s' "$UMU_FLATPAK"
     else
         printf '%s' "$UMU_BIN"
     fi
@@ -305,7 +300,7 @@ umu_launch() {
     if [ "$UMU_BIN" = "FLATPAK" ]; then
         [ -z "$PROTON_VERB" ] && PROTON_VERB=waitforexitandrun
         # The Flatpak only sees --env vars: forward just ZOOM_FORWARD_ENV (all of them would leak the user's WINEDLLOVERRIDES)
-        set -- org.openwinecomponents.umu.umu-launcher "$@"
+        set -- "$UMU_FLATPAK" "$@"
         for _fwd_name in $ZOOM_FORWARD_ENV; do
             _fwd_val=""
             eval "_fwd_val=\${$_fwd_name}"
@@ -318,23 +313,17 @@ umu_launch() {
     fi
 }
 
-test_file_perms() {
-    _mode=$1
-    _target=$2
-
-    case $_mode in
-        "r" | "w") ;;
-        *)
-            fatal_error "Invalid test_file_perms pararm: $_mode. Must be r or w"
-    esac
-
+in_umu_sh() {
     if [ "$UMU_BIN" = "FLATPAK" ]; then
-        flatpak run --command=sh org.openwinecomponents.umu.umu-launcher -c "test -$_mode \"$_target\""
-        return $?
+        flatpak run --command=sh "$UMU_FLATPAK" -c "$@"
     else
-        test -"$_mode" "$_target"
-        return $?
+        sh -c "$@"
     fi
+}
+
+test_file_perms() {
+    # shellcheck disable=SC2016
+    in_umu_sh 'test -r "$1"' sh "$1"
 }
 
 test_dest_writable() {
@@ -351,13 +340,7 @@ test_dest_writable() {
         printf "%s\n" "$_p"
         test -w "$_p"
     '
-    if [ "$UMU_BIN" = "FLATPAK" ]; then
-        flatpak run --command=sh org.openwinecomponents.umu.umu-launcher -c "$_tdw_script" sh "$1"
-        return $?
-    else
-        sh -c "$_tdw_script" sh "$1"
-        return $?
-    fi
+    in_umu_sh "$_tdw_script" sh "$1"
 }
 
 get_slice_size() {
@@ -414,8 +397,6 @@ check_installer_slices() {
     # The name without a duplicate counter a browser may have added: "Setup (1)" -> "Setup"
     _cis_orig=$(printf '%s' "$_cis_stem" | sed 's/ \{0,1\}([0-9]\{1,\})$//')
 
-    _cis_nl='
-'
     _cis_missing=''    # Lines about parts that are misnamed or unreadable: always fatal
     _cis_absent=''     # Lines about parts not found under any name: a warning, see above
     _cis_incomplete='' # Lines about parts that are there but look cut short: a warning too
@@ -425,11 +406,11 @@ check_installer_slices() {
         _cis_want="$_cis_dir/$_cis_stem-$_cis_n.bin"
 
         if [ -f "$_cis_want" ]; then
-            if ! test_file_perms r "$_cis_want"; then
-                _cis_missing="$_cis_missing$_cis_nl- Part $_cis_n of $_cis_count can't be read by the installer (permissions): ${_cis_want##*/}"
+            if ! test_file_perms "$_cis_want"; then
+                _cis_missing="$_cis_missing$NL- Part $_cis_n of $_cis_count can't be read by the installer (permissions): ${_cis_want##*/}"
             else
                 _cis_problem=$(describe_slice_problem "$_cis_want")
-                [ -n "$_cis_problem" ] && _cis_incomplete="$_cis_incomplete$_cis_nl- ${_cis_want##*/}: $_cis_problem"
+                [ -n "$_cis_problem" ] && _cis_incomplete="$_cis_incomplete$NL- ${_cis_want##*/}: $_cis_problem"
             fi
         else
             _cis_found=0
@@ -449,21 +430,21 @@ check_installer_slices() {
                 _cis_problem=$(describe_slice_problem "$_cis_cand")
                 _cis_note=''
                 [ -n "$_cis_problem" ] && _cis_note=" ($_cis_problem)"
-                _cis_missing="$_cis_missing$_cis_nl- Part $_cis_n of $_cis_count: rename \"${_cis_cand##*/}\"$_cis_note to \"${_cis_want##*/}\""
+                _cis_missing="$_cis_missing$NL- Part $_cis_n of $_cis_count: rename \"${_cis_cand##*/}\"$_cis_note to \"${_cis_want##*/}\""
             done
-            [ $_cis_found -eq 0 ] && _cis_absent="$_cis_absent$_cis_nl- Part $_cis_n of $_cis_count: ${_cis_want##*/}"
+            [ $_cis_found -eq 0 ] && _cis_absent="$_cis_absent$NL- Part $_cis_n of $_cis_count: ${_cis_want##*/}"
         fi
         _cis_n=$((_cis_n+1))
     done
 
     if [ -n "$_cis_missing" ]; then
-        _cis_msg="This installer comes in $_cis_count data files (.bin) that must be in the same folder, with names that start with the installer's:$_cis_nl$_cis_dir$_cis_nl$_cis_missing"
-        [ -n "$_cis_incomplete" ] && _cis_msg="$_cis_msg$_cis_nl${_cis_nl}These also look wrong:$_cis_incomplete"
-        [ -n "$_cis_absent" ] && _cis_msg="$_cis_msg$_cis_nl${_cis_nl}These weren't found anywhere either (fix the problems above first, then run the script again to see if Setup can ask for these itself):$_cis_absent"
+        _cis_msg="This installer comes in $_cis_count data files (.bin) that must be in the same folder, with names that start with the installer's:$NL$_cis_dir$NL$_cis_missing"
+        [ -n "$_cis_incomplete" ] && _cis_msg="$_cis_msg$NL${NL}These also look wrong:$_cis_incomplete"
+        [ -n "$_cis_absent" ] && _cis_msg="$_cis_msg$NL${NL}These weren't found anywhere either (fix the problems above first, then run the script again to see if Setup can ask for these itself):$_cis_absent"
         if [ "$_cis_stem" != "$_cis_orig" ]; then
-            _cis_msg="$_cis_msg$_cis_nl${_cis_nl}The installer's own name has a download counter too. If the .bin files have the original names, renaming the installer back to \"$_cis_orig${_cis_exe#"$_cis_stem"}\" is enough."
+            _cis_msg="$_cis_msg$NL${NL}The installer's own name has a download counter too. If the .bin files have the original names, renaming the installer back to \"$_cis_orig${_cis_exe#"$_cis_stem"}\" is enough."
         fi
-        fatal_error "$_cis_msg${_cis_nl}${_cis_nl}Fix the names and run the script again." "Installer files missing"
+        fatal_error "$_cis_msg${NL}${NL}Fix the names and run the script again." "Installer files missing"
     fi
 
     if [ -n "$_cis_absent" ] || [ -n "$_cis_incomplete" ]; then
@@ -477,11 +458,11 @@ check_installer_slices() {
 
         _cis_msg=''
         if [ -n "$_cis_absent" ]; then
-            _cis_msg="These data files (.bin) weren't found next to the installer:$_cis_absent${_cis_nl}${_cis_nl}Setup has its own way to handle this: it will ask for each one by name during install (a \"Setup Needs the Next Disk\" dialog).${_cis_nl}When it does, point it at whatever folder, disc or drive actually holds that file.${_cis_nl}The folder doesn't matter, but the file must keep the exact name shown above."
+            _cis_msg="These data files (.bin) weren't found next to the installer:$_cis_absent${NL}${NL}Setup has its own way to handle this: it will ask for each one by name during install (a \"Setup Needs the Next Disk\" dialog).${NL}When it does, point it at whatever folder, disc or drive actually holds that file.${NL}The folder doesn't matter, but the file must keep the exact name shown above."
         fi
         if [ -n "$_cis_incomplete" ]; then
-            [ -n "$_cis_msg" ] && _cis_msg="$_cis_msg$_cis_nl$_cis_nl"
-            _cis_msg="${_cis_msg}These files don't look right, their download probably didn't finish:$_cis_incomplete${_cis_nl}${_cis_nl}The installation will most likely fail partway through."
+            [ -n "$_cis_msg" ] && _cis_msg="$_cis_msg$NL$NL"
+            _cis_msg="${_cis_msg}These files don't look right, their download probably didn't finish:$_cis_incomplete${NL}${NL}The installation will most likely fail partway through."
         fi
 
         ask_continue "$_cis_title" "$_cis_msg" ||
@@ -668,7 +649,7 @@ parse_lnk() {
 
 # wine's StartupWMClass is lowercase and parse_lnk's isn't, so both are lowercased here
 is_skipped_shortcut() {
-    _skip_target=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    _skip_target=$(printf '%s' "$1" | lower)
     _skip_name=$2
     case $_skip_target in
         "unins000.exe" | *".pdf")
@@ -732,13 +713,13 @@ lnk_launch_signature() {
 # Returns 0 if a same-named .lnk launches the same thing, 2 if it launches something else, 1 if there is none
 compare_with_existing_lnk() {
     _cw_sig=$(lnk_launch_signature "$1")
-    _cw_name=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
+    _cw_name=$(printf '%s' "$2" | lower)
     _cw_result=1
     # By name, not find -name (names can hold glob characters); case-insensitive like wine
     while IFS= read -r _cw_other; do
         [ -n "$_cw_other" ] || continue
         _cw_base=${_cw_other##*/}
-        _cw_base=$(printf '%s' "${_cw_base%.[lL][nN][kK]}" | tr '[:upper:]' '[:lower:]')
+        _cw_base=$(printf '%s' "${_cw_base%.[lL][nN][kK]}" | lower)
         [ "$_cw_base" = "$_cw_name" ] || continue
         _cw_result=2
         # An unreadable .lnk (empty signature) is never "the same"
@@ -784,8 +765,6 @@ ensure_proton_shortcuts() {
     ( unset UMU_CONTAINER_NSENTER; umu_launch hostname ) >> "$_sc_log" 2>&1 < /dev/null
 
     _sc_missing=''
-    _sc_nl='
-'
     # Here-doc, not a pipe, so the counters survive (dash); umu calls get </dev/null so they can't swallow it
     while IFS= read -r _sc_win; do
         [ -n "$_sc_win" ] || continue
@@ -813,7 +792,7 @@ ensure_proton_shortcuts() {
         _sc_rel=${_sc_win#?:\\}
         _sc_native="$INSTALL_PATH/drive_c/$(printf '%s' "$_sc_rel" | tr '\134' '/')" # \134 is a backslash
         if [ ! -f "$_sc_native" ]; then
-            _sc_native=$( (PROTON_VERB=getnativepath umu_launch "$_sc_win" < /dev/null) 2> /dev/null | head -n 1)
+            _sc_native=$(native_path "$_sc_win")
         fi
         if [ ! -f "$_sc_native" ]; then
             log_error "Can't find the shortcut file for \"$_sc_name\" ($_sc_win), so it won't get a launcher."
@@ -825,7 +804,7 @@ ensure_proton_shortcuts() {
         is_skipped_shortcut "$_sc_exe" "$_sc_name" && continue
 
         SHORTCUTS_KEPT=$((SHORTCUTS_KEPT+1))
-        _sc_missing="$_sc_missing$_sc_win$_sc_nl"
+        _sc_missing="$_sc_missing$_sc_win$NL"
     done <<EOL
 $_sc_links
 EOL
@@ -1071,8 +1050,6 @@ load_game_fixes() {
     GAME_FILES_BACKUP=''
     GAME_FILES_OVERRIDE=''
     GAME_FIXES_REGISTRY_DELETE='' # "key|name" per value to remove (see apply_game_fix_files)
-    _gf_nl='
-'
     _gf_file="$CACHE_DIR/game-fixes.ini"
     if [ -n "${ZOOM_GAME_FIXES_FILE:-}" ]; then
         _gf_file=$ZOOM_GAME_FIXES_FILE
@@ -1083,12 +1060,11 @@ load_game_fixes() {
         fi
     else
         # Lowercase GUID (raw.githubusercontent.com is case sensitive)
-        _gf_url="$GAME_FIXES_URL/$(printf '%s' "$ZOOM_GUID" | tr '[:upper:]' '[:lower:]').ini"
+        _gf_url="$GAME_FIXES_URL/$(printf '%s' "$ZOOM_GUID" | lower).ini"
         log_info "Game fixes: looking for a fixes file for this game at $_gf_url"
         rm -f "$_gf_file"
         # No -f, so the status code tells "no file for this game" (404) from a real failure
-        _gf_code=$(curl -Ls --max-time 15 -o "$_gf_file" -w '%{http_code}' \
-            -H "User-Agent: $HTTP_USER_AGENT" "$_gf_url")
+        _gf_code=$(http_code "$_gf_file" "$_gf_url")
         _gf_exit=$?
         case "$_gf_exit:$_gf_code" in
             0:200)
@@ -1137,11 +1113,11 @@ load_game_fixes() {
             continue
         fi
         if [ "$_gf_a" = '@' ]; then
-            GAME_FIXES_REGISTRY="$GAME_FIXES_REGISTRY$_gf_b|$_gf_c|$_gf_d|$_gf_e$_gf_nl"
+            GAME_FIXES_REGISTRY="$GAME_FIXES_REGISTRY$_gf_b|$_gf_c|$_gf_d|$_gf_e$NL"
             _gf_reg_count=$((_gf_reg_count+1))
             continue
         fi
-        GAME_FIXES="$GAME_FIXES$_gf_a|$_gf_b|$_gf_c|$_gf_d|$_gf_e$_gf_nl"
+        GAME_FIXES="$GAME_FIXES$_gf_a|$_gf_b|$_gf_c|$_gf_d|$_gf_e$NL"
         _gf_count=$((_gf_count+1))
         _gf_names="${_gf_names:+$_gf_names, }\"$_gf_a\""
     done <<EOL
@@ -1213,8 +1189,7 @@ fetch_game_fix_zip() {
     else
         log_info "Game fixes: downloading $GAME_FILES_ZIP..."
         # --fail so an error page isn't saved as the zip
-        if ! curl -sL --fail --connect-timeout 15 --max-time 60 \
-                -H "User-Agent: $HTTP_USER_AGENT" -o "$_fz_file" "$GAME_FIXES_URL/files/$GAME_FILES_ZIP"; then
+        if ! http -sL --fail --connect-timeout 15 --max-time 60 -o "$_fz_file" "$GAME_FIXES_URL/files/$GAME_FILES_ZIP"; then
             rm -f "$_fz_file"
             log_warning "Game fixes: couldn't download $GAME_FIXES_URL/files/$GAME_FILES_ZIP, going on without its files"
             return 0
@@ -1356,7 +1331,7 @@ apply_game_fix_files() {
         _af_list=$(printf '%s' "$GAME_FILES_OVERRIDE" | tr ',' '\n')
         while IFS= read -r _af_n; do
             [ -n "$_af_n" ] || continue
-            GAME_FIXES_REGISTRY="${GAME_FIXES_REGISTRY}HKCU\\Software\\Wine\\DllOverrides|$_af_n|sz|native,builtin$_gf_nl"
+            GAME_FIXES_REGISTRY="${GAME_FIXES_REGISTRY}HKCU\\Software\\Wine\\DllOverrides|$_af_n|sz|native,builtin$NL"
         done <<EOL
 $_af_list
 EOL
@@ -1365,7 +1340,7 @@ EOL
         _af_list=$(printf '%s' "$GAME_FILES_OVERRIDE" | tr ',' '\n')
         while IFS= read -r _af_n; do
             [ -n "$_af_n" ] || continue
-            GAME_FIXES_REGISTRY_DELETE="${GAME_FIXES_REGISTRY_DELETE}HKCU\\Software\\Wine\\DllOverrides|$_af_n$_gf_nl"
+            GAME_FIXES_REGISTRY_DELETE="${GAME_FIXES_REGISTRY_DELETE}HKCU\\Software\\Wine\\DllOverrides|$_af_n$NL"
         done <<EOL
 $_af_list
 EOL
@@ -1403,8 +1378,7 @@ download_pinned_proton() {
     log_info "Pinned Proton: downloading $_dp_asset (only needed the first time)..."
     rm -f "$_dp_file"
     # --fail so an error page isn't saved; the speed limit gives up on a stalled connection (no overall time limit)
-    if ! curl -L --fail --progress-bar --connect-timeout 15 --speed-limit 1024 --speed-time 60 \
-            -H "User-Agent: $HTTP_USER_AGENT" -o "$_dp_file" "$PROTON_GE_URL/$_dp_tag/$_dp_asset"; then
+    if ! http -L --fail --progress-bar --connect-timeout 15 --speed-limit 1024 --speed-time 60 -o "$_dp_file" "$PROTON_GE_URL/$_dp_tag/$_dp_asset"; then
         rm -f "$_dp_file"
         log_warning "Pinned Proton: couldn't download $PROTON_GE_URL/$_dp_tag/$_dp_asset"
         return 1
@@ -1576,18 +1550,16 @@ make_launcher() {
     _ml_shortcut=$8
 
     _ml_pin=$(pinned_proton_launch_lines)
-    _ml_nl='
-'
     cat >"$ZOOM_SHORTCUTS_PATH/$_ml_filename.sh" <<EOL
 #!/bin/sh
 export GAMEID="$UMU_ID"
 export WINEPREFIX="$INSTALL_PATH"
 export STORE="zoomplatform"
-${_ml_pin:+$_ml_pin$_ml_nl}$(umu_launch_command) start /b /d "$_ml_workingdir" "$_ml_exe" $_ml_args
+${_ml_pin:+$_ml_pin$NL}$(umu_launch_command) start /b /d "$_ml_workingdir" "$_ml_exe" $_ml_args
 EOL
     chmod +x "$ZOOM_SHORTCUTS_PATH/$_ml_filename.sh"
     LAUNCHERS_MADE=$((LAUNCHERS_MADE+1))
-    LAUNCHER_MAP="$LAUNCHER_MAP$_ml_shortcut|$_ml_filename$_nl"
+    LAUNCHER_MAP="$LAUNCHER_MAP$_ml_shortcut|$_ml_filename$NL"
 
     # Desktop entries handle special characters badly: point at a script symlinked under a plain path
     if [ "$CREATE_DESKTOP_ENTRIES" -eq 1 ]; then
@@ -1630,7 +1602,7 @@ make_fixed_launchers() {
 
         # Skip launchers for missing files; umu gets /dev/null so it can't swallow the rest of the fixes
         _fx_winexe="$_fx_base\\$_fx_exe"
-        _fx_native=$( (PROTON_VERB=getnativepath umu_launch "$_fx_winexe" < /dev/null) 2> /dev/null | head -n 1)
+        _fx_native=$(native_path "$_fx_winexe")
         if [ ! -f "$_fx_native" ]; then
             log_warning "Game fix \"$_fx_name\": \"$_fx_winexe\" isn't there, skipping it"
             continue
@@ -1639,7 +1611,7 @@ make_fixed_launchers() {
         [ -n "$_fx_workdir" ] && _fx_winworkdir="$_fx_base\\$_fx_workdir"
         # What wine calls the game's window, which is what the menu entry has to match
         _fx_exename=${_fx_exe##*\\}
-        _fx_wmclass=$(printf '%s' "$_fx_exename" | tr '[:upper:]' '[:lower:]')
+        _fx_wmclass=$(printf '%s' "$_fx_exename" | lower)
 
         log_info "Game fix: making \"$_fx_name\" in place of \"$_fx_shortcut\""
         make_launcher "$_fx_name" "$_fx_name" \
@@ -2228,7 +2200,7 @@ EOL
     exit $_rp_failed
 fi
 
-base64_dec "$(get_innoext_string)" > $INNOEXT_BIN || fatal_error "Could not decode base64." "Error unpacking innoextract"
+get_innoext_string | base64_dec > $INNOEXT_BIN || fatal_error "Could not decode base64." "Error unpacking innoextract"
 if [ -s "$INNOEXT_BIN" ]; then
     chmod +x $INNOEXT_BIN
     $INNOEXT_BIN --version > /dev/null 2>&1 || fatal_error "Cannot launch $INNOEXT_BIN"
@@ -2254,7 +2226,7 @@ if [ -n "$GUID_INSTALLER" ]; then
             log_warning "\"$GUID_INSTALLER\" has no ZOOM Platform game ID inside and isn't in the list of known ones, so its Inno Setup AppId is printed. Please report the game: $REPO_PATH/issues"
             ;;
     esac
-    printf '%s\n' "$GAME_GUID" | tr '[:upper:]' '[:lower:]'
+    printf '%s\n' "$GAME_GUID" | lower
     exit 0
 fi
 
@@ -2267,7 +2239,7 @@ elif command -v "$HOME"/.local/share/umu/umu-run > /dev/null; then
 elif command -v /usr/bin/umu-run > /dev/null; then
     UMU_BIN=/usr/bin/umu-run
     log_info "Using /usr/bin/umu-run"
-elif flatpak info org.openwinecomponents.umu.umu-launcher >/dev/null 2>&1; then
+elif flatpak info "$UMU_FLATPAK" >/dev/null 2>&1; then
     UMU_BIN="FLATPAK"
     log_info "Using umu Flatpak"
 else
@@ -2295,7 +2267,7 @@ if [ $CAN_USE_DIALOGS -eq 0 ]; then
     fi
 fi
 
-if ! test_file_perms r "$INPUT_INSTALLER" ; then
+if ! test_file_perms "$INPUT_INSTALLER" ; then
     _msg="Installer either does not exist or $([ "$UMU_BIN" = "FLATPAK" ] && printf "umu Flatpak does not have" || printf "no") read permissions."
     fatal_error "$_msg"
 fi
@@ -2364,11 +2336,9 @@ if [ -z "$INSTALL_PATH" ]; then
 fi
 
 if [ "$UMU_BIN" = "FLATPAK" ] && ! _dest_checked=$(test_dest_writable "$INSTALL_PATH"); then
-    _nl='
-'
-    _msg="The umu Flatpak does not have write permissions to the install directory.$_nl$INSTALL_PATH"
+    _msg="The umu Flatpak does not have write permissions to the install directory.$NL$INSTALL_PATH"
     if [ "$_dest_checked" != "$INSTALL_PATH" ]; then
-        _msg="$_msg${_nl}(it doesn't exist yet, so this was checked: $_dest_checked)"
+        _msg="$_msg${NL}(it doesn't exist yet, so this was checked: $_dest_checked)"
     fi
     fatal_error "$_msg" "No permissions"
 fi
@@ -2524,8 +2494,6 @@ LAUNCHERS_MADE=0
 DUPLICATE_SHORTCUTS=0 # this run's shortcuts that are copies of ones already there, so get no launcher
 # "<shortcut name>|<launcher name>" per launcher made, for the Desktop links (a DLC shortcut named like a base game one differs)
 LAUNCHER_MAP=''
-_nl='
-'
 for file in "$PROTON_SHORTCUTS_PATH"/*.desktop; do
     [ ! -f "$file" ] && continue
 
@@ -2551,7 +2519,7 @@ for file in "$PROTON_SHORTCUTS_PATH"/*.desktop; do
             _lnkpathwin=${_lnkpathwin%\"}
             ;;
     esac
-    _lnkpathlinux=$( (PROTON_VERB=getnativepath umu_launch "$(printf '%s' "$_lnkpathwin" | sed 's/\\\\/\\/g; s/\\ / /g; s/\\\([^\\]\)/\1/g')") 2> /dev/null | head -n 1)
+    _lnkpathlinux=$(native_path "$(printf '%s' "$_lnkpathwin" | sed 's/\\\\/\\/g; s/\\ / /g; s/\\\([^\\]\)/\1/g')")
     # No .lnk, nothing to make a launcher from (and an empty launcher is worse than none)
     if [ ! -f "$_lnkpathlinux" ]; then
         log_error "Couldn't read the shortcut \"$_shortcut_name\" ($_lnkpathwin), so it won't get a launcher."
@@ -2569,7 +2537,7 @@ for file in "$PROTON_SHORTCUTS_PATH"/*.desktop; do
                 _filename=$GAME_NAME_SAFE
                 # A second one in the same run can't have the same name too
                 case $LAUNCHER_MAP in
-                    *"|$_filename$_nl"*) _filename="$GAME_NAME_SAFE ($_shortcut_name)" ;;
+                    *"|$_filename$NL"*) _filename="$GAME_NAME_SAFE ($_shortcut_name)" ;;
                 esac
                 _name=$_filename
                 ;;
