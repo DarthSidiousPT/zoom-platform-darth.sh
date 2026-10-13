@@ -2091,6 +2091,26 @@ GRPEOF
     printf '\n'
 fi
 
+# The Desktop folder can move after the install (language change, edited user-dirs.dirs), so
+# look in the baked-in one and wherever it is now
+DESKTOP_DIRS=$DESKTOP_DIR
+_now_desktop=$(xdg-user-dir DESKTOP 2>/dev/null)
+if [ -d "$_now_desktop" ] && [ "$_now_desktop" != "$DESKTOP_DIR" ]; then
+    DESKTOP_DIRS="$DESKTOP_DIRS
+$_now_desktop"
+fi
+# Prints every Desktop symlink to a .desktop file, one per line
+list_desktop_links() {
+    while IFS= read -r _ld_dir; do
+        [ -n "$_ld_dir" ] || continue
+        for _ld_file in "$_ld_dir"/*.desktop; do
+            [ -L "$_ld_file" ] && printf '%s\n' "$_ld_file"
+        done
+    done <<DDEOF
+$DESKTOP_DIRS
+DDEOF
+}
+
 # Preview of what exists, buffered to choose between "This will delete:" and "Nothing left"
 _preview=''
 _savegames_needed=0
@@ -2117,15 +2137,17 @@ $ICON_GROUPS
 GRPEOF
 while IFS= read -r _group; do
     [ -n "$_group" ] || continue
-    for _desktopfile in "$DESKTOP_DIR"/*.desktop; do
-        [ -L "$_desktopfile" ] || continue
+    while IFS= read -r _desktopfile; do
+        [ -n "$_desktopfile" ] || continue
         case "$(readlink "$_desktopfile")" in
             "$APPLICATIONS_ROOT/$_group"/*)
                 _preview="$_preview$(printf '  %-17s%s' 'Desktop link' "$(show_path "$_desktopfile")")
 "
                 ;;
         esac
-    done
+    done <<LNKEOF
+$(list_desktop_links)
+LNKEOF
 done <<GRPEOF
 $ICON_GROUPS
 GRPEOF
@@ -2212,8 +2234,8 @@ fi
 
 while IFS= read -r _group; do
     [ -n "$_group" ] || continue
-    for _desktopfile in "$DESKTOP_DIR"/*.desktop; do
-        [ -L "$_desktopfile" ] || continue
+    while IFS= read -r _desktopfile; do
+        [ -n "$_desktopfile" ] || continue
         case "$(readlink "$_desktopfile")" in
             "$APPLICATIONS_ROOT/$_group"/*)
                 rm -f "$_desktopfile" 2>/dev/null
@@ -2224,7 +2246,9 @@ while IFS= read -r _group; do
                 fi
                 ;;
         esac
-    done
+    done <<LNKEOF
+$(list_desktop_links)
+LNKEOF
     if [ -e "$APPLICATIONS_ROOT/$_group" ]; then
         rm -rf "${APPLICATIONS_ROOT:?}/$_group" 2>/dev/null
         if [ -e "$APPLICATIONS_ROOT/$_group" ]; then
