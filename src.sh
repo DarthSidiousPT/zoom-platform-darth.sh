@@ -3,34 +3,25 @@
 
 #__LICENSE_HERE__
 
-#set -x
-
 #__INNOEXTRACT_BINARY_START__
 INNOEXTRACT_BINARY_B64=0
 #__INNOEXTRACT_BINARY_END__
 
 INSTALLER_VERSION="DEV"
 REPO_PATH="https://github.com/DarthSidiousPT/zoom-platform-darth.sh"
-# Identifies this fork in the logs of the servers it contacts
 HTTP_USER_AGENT="zoom-platform-darth.sh/$INSTALLER_VERSION (+$REPO_PATH)"
-# Per-game fixes: game-fixes/<GUID>.ini in this repo (see game-fixes/README.md)
 GAME_FIXES_URL="https://raw.githubusercontent.com/DarthSidiousPT/zoom-platform-darth.sh/main/game-fixes"
 INNOEXT_BIN="/tmp/innoextract_zoom"
 LAUNCH_SCRIPTS_PATH="$HOME"/.local/share/zoom-platform
 APPLICATIONS_ROOT="$HOME"/.local/share/applications/zoom-platform
-# Wine's own menu folders, one per icon group. Not ours: the uninstaller only removes empty ones
 WINE_MENU_ROOT="$HOME"/.local/share/applications/wine/Programs
 UMU_BIN=umu-run
 CACHE_DIR="$HOME"/.cache/zoom-platform
-# Where umu looks for Proton builds; a game's pinned build is unpacked here
 PROTON_COMPAT_DIR="$HOME"/.local/share/Steam/compatibilitytools.d
-# File inside a build's folder, written when this script downloaded it. Also baked into uninstall.sh
 PROTON_NOTE=.zoom-platform-downloaded
 PROTON_GE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download"
-# The pinned Proton build's folder, empty when the game isn't pinned (umu then picks its own)
 ZOOM_PROTONPATH=''
 
-# Fallback if xdg-utils is missing. Also baked into uninstall.sh
 DESKTOP_DIR="$(xdg-user-dir DESKTOP 2> /dev/null)"
 [ -d "$DESKTOP_DIR" ] || DESKTOP_DIR="$HOME/Desktop"
 
@@ -70,8 +61,7 @@ dialog_install_dir_select() {
     fi
 }
 
-# zenity/kdialog simple dialogs ignore --width, so one long line stretches the window.
-# Folding to 78 columns first avoids that (--no-wrap then keeps those breaks).
+# Dialogs ignore --width: fold long lines or the window stretches edge to edge
 wrap_dialog_msg() {
     if command -v fold > /dev/null; then
         printf '%s\n' "$1" | fold -s -w 78
@@ -111,8 +101,6 @@ log_warning() {
     printf "\033[33;1mWARNING:\033[0m %s\n" "$*" >&2
 }
 
-# Yes/no question, default no. Reads /dev/tty because stdin may be the piped script.
-# Returns 0 only to continue.
 ask_continue() {
     _ac_title=$1
     _ac_msg=$2
@@ -144,7 +132,6 @@ ask_continue() {
     return 1
 }
 
-# Prints a byte count like ZOOM's download page (1024-based)
 format_size() {
     awk -v _b="$1" 'BEGIN {
         if (_b >= 1073741824) printf "%.2f GB", _b / 1073741824
@@ -153,7 +140,6 @@ format_size() {
     }'
 }
 
-# Shows the error (dialog if possible) and exits. $1: message, $2: dialog title
 fatal_error() {
     [ $CAN_USE_DIALOGS -eq 1 ] && dialog_msgbox error "$2" "$1"
     log_error "$1"
@@ -188,9 +174,6 @@ trim_string() {
     awk '{$1=$1;print}'
 }
 
-# ZOOM GUID listed for an Inno AppId in game-fixes/known-guids.ini, for installers that carry no
-# ZOOM game ID. Returns 0 found, 1 not listed, 2 couldn't get the list. ZOOM_KNOWN_GUIDS_FILE
-# reads a local file instead.
 fetch_known_guid() {
     _kg_appid=$1
     _kg_file="$CACHE_DIR/known-guids.ini"
@@ -222,10 +205,6 @@ fetch_known_guid() {
     printf '%s\n' "$_kg_guid"
 }
 
-# Sets GAME_GUID and GAME_GUID_FROM for an installer: "installer" (its own Site GUID), "list"
-# (known-guids.ini, for old installers without one), "appid" (the Inno AppId, when the list has
-# no entry) or "offline" (no Site GUID and the list couldn't be fetched, GAME_GUID empty).
-# Returns 1 when it isn't a ZOOM installer.
 resolve_game_guid() {
     _rg_installer=$1
     GAME_GUID=''
@@ -236,10 +215,8 @@ resolve_game_guid() {
         GAME_GUID_FROM=installer
         return 0
     fi
-    # Nothing at all: no ZOOM key in the installer
     [ -n "$_rg_out" ] || return 1
 
-    # A ZOOM key without a Site GUID (older installers): the Inno AppId is all that identifies it.
     # get_header_val doesn't exist yet at this point
     _rg_appid=$($INNOEXT_BIN -s --print-headers "$_rg_installer" 2> /dev/null \
         | sed -n 's/^app_id: "\(.*\)"/\1/p' | sed 's/[{}]//g' | trim_string)
@@ -255,7 +232,6 @@ resolve_game_guid() {
     return 0
 }
 
-# Escapes ' as '\'' for a single-quoted literal, so values baked into uninstall.sh can't break it
 quote_sq() {
     printf '%s' "$1" | sed "s/'/'\\\\''/g"
 }
@@ -278,7 +254,6 @@ download_umu_zipapp() {
     UMU_BIN="$CACHE_DIR"/umu/umu-run
 }
 
-# Get umu-launcher's url from lutris' runtime api
 get_umu_url() {
     _api_resp=$(curl -Ls -H "User-Agent: $HTTP_USER_AGENT" \
                     'https://lutris.net/api/runtimes?format=json')
@@ -324,13 +299,11 @@ get_desktop_value() {
     sed -n -e "/^$_key=/s/^$_key=//p" "$_desktopfile"
 }
 
-# Generate command to launch umu with
 umu_launch_command() {
     if [ "$UMU_BIN" = "FLATPAK" ]; then
         # shellcheck disable=SC2016
         printf '%s' 'flatpak run --env=GAMEID="$GAMEID" --env=WINEPREFIX="$WINEPREFIX" --env=STORE="$STORE"'
-        # PROTONPATH is only set in a pinned game's launch script while its folder exists, and umu
-        # rejects an empty one
+        # umu rejects an empty PROTONPATH, so it is only passed while set
         # shellcheck disable=SC2016
         [ -n "$ZOOM_PROTONPATH" ] && printf '%s' ' ${PROTONPATH:+--env=PROTONPATH=$PROTONPATH}'
         printf '%s' ' org.openwinecomponents.umu.umu-launcher'
@@ -342,16 +315,13 @@ umu_launch_command() {
 umu_launch() {
     if [ "$UMU_BIN" = "FLATPAK" ]; then
         [ -z "$PROTON_VERB" ] && PROTON_VERB=waitforexitandrun
-        # The Flatpak only sees --env vars. A caller needing extra ones for one call lists their names
-        # in ZOOM_FORWARD_ENV (forwarding everything would leak the user's own WINEDLLOVERRIDES into
-        # every call). Each --env goes before the app id, which keeps values with spaces intact.
+        # The Flatpak only sees --env vars: forward just ZOOM_FORWARD_ENV (all of them would leak the user's WINEDLLOVERRIDES)
         set -- org.openwinecomponents.umu.umu-launcher "$@"
         for _fwd_name in $ZOOM_FORWARD_ENV; do
             _fwd_val=""
             eval "_fwd_val=\${$_fwd_name}"
             set -- "--env=$_fwd_name=$_fwd_val" "$@"
         done
-        # Only a pinned game gets PROTONPATH, so the user's own one is never passed in
         [ -n "$ZOOM_PROTONPATH" ] && set -- "--env=PROTONPATH=$ZOOM_PROTONPATH" "$@"
         flatpak run --env=GAMEID="$GAMEID" --env=WINEPREFIX="$WINEPREFIX" --env=PROTON_VERB="$PROTON_VERB" "$@"
     else
@@ -359,9 +329,8 @@ umu_launch() {
     fi
 }
 
-# Permission check; runs inside the Flatpak when that's the umu in use
 test_file_perms() {
-    _mode=$1 # r or w
+    _mode=$1
     _target=$2
 
     case $_mode in
@@ -379,9 +348,6 @@ test_file_perms() {
     fi
 }
 
-# Checks the install destination is writable even if it doesn't exist yet (tests the nearest
-# existing parent) and prints that folder. Runs inside the Flatpak when used, since its paths
-# can differ from the host's.
 test_dest_writable() {
     # Path passed as $1, not spliced in, so quotes and $ can't break the script
     # shellcheck disable=SC2016
@@ -405,13 +371,9 @@ test_dest_writable() {
     fi
 }
 
-# Prints the size a slice (.bin) says it has. Header: 8-byte magic, then the size little-endian:
-# idska16/idska32 -> 4 bytes (offset 8), idskb32 -> 8 bytes (offset 8). Returns 1 on an
-# unknown magic.
 get_slice_size() {
     _gss_file=$1
 
-    # First 8 bytes as hex
     _gss_magic=$(od -A n -t x1 -N 8 "$_gss_file" 2> /dev/null | tr -d ' \n')
     case $_gss_magic in
         6964736b6131361a | 6964736b6133321a) _gss_len=4 ;; # idska16, idska32
@@ -419,13 +381,11 @@ get_slice_size() {
         *) return 1 ;;
     esac
 
-    # od prints one number per byte, least significant first. %.0f, not %d: some awks clamp %d
-    # to 32 bits and slices are over 2GB.
+    # %.0f, not %d: some awks clamp %d to 32 bits and slices are over 2GB
     od -A n -t u1 -j 8 -N "$_gss_len" "$_gss_file" 2> /dev/null |
         awk 'BEGIN { m = 1 } { for (i = 1; i <= NF; i++) { s += $i * m; m *= 256 } } END { if (NR == 0) exit 1; printf "%.0f", s }'
 }
 
-# Prints what's wrong with a slice file (only if shorter than its header says), else nothing
 describe_slice_problem() {
     _dsp_file=$1
 
@@ -438,16 +398,7 @@ describe_slice_problem() {
     fi
 }
 
-# Big installers come as <installer name>-1.bin, -2.bin, ... next to the .exe, and Inno only
-# looks for each when it reaches it. Checking up front sorts problems into:
-# - misnamed (a browser's "(1)" suffix) or unreadable: fatal, says what to rename or chmod.
-#   Inno's own "next disk" prompt can't help, it only accepts the exact name.
-# - not found under any name, or shorter than its header says: a warning the user may
-#   continue past. For a missing part, Inno's "Setup Needs the Next Disk" dialog lets them
-#   browse to the folder that holds it.
-# Needs slice_count from the fork's --print-headers; without it there's nothing to check.
 check_installer_slices() {
-    # Parts Setup will still ask for ("- Part N of M: name.bin" lines), read by the caller
     SLICES_NOT_FOUND=''
 
     _cis_count=$(get_header_val 'slice_count')
@@ -455,11 +406,9 @@ check_installer_slices() {
         '' | 0 | *[!0-9]*) return 0 ;;
     esac
 
-    # Not handled (no ZOOM installer uses them): names stored in the headers before 4.1.7, and
-    # a letter suffix with more than one slice per disk
     _cis_spd=$(get_header_val 'slices_per_disk')
     _cis_ver=$(get_header_val 'setup_version')
-    _cis_ver=${_cis_ver%% *} # "6.6.0 (unicode)" -> "6.6.0"
+    _cis_ver=${_cis_ver%% *}
     case $_cis_ver in
         [1-3].* | 4.0.* | 4.1.[0-6])
             log_info "Old Inno Setup ($_cis_ver), not checking the .bin files"
@@ -484,7 +433,6 @@ check_installer_slices() {
 
     _cis_n=1
     while [ "$_cis_n" -le "$_cis_count" ]; do
-        # The name Inno Setup will look for
         _cis_want="$_cis_dir/$_cis_stem-$_cis_n.bin"
 
         if [ -f "$_cis_want" ]; then
@@ -523,7 +471,6 @@ check_installer_slices() {
         _cis_msg="This installer comes in $_cis_count data files (.bin) that must be in the same folder, with names that start with the installer's:$_cis_nl$_cis_dir$_cis_nl$_cis_missing"
         [ -n "$_cis_incomplete" ] && _cis_msg="$_cis_msg$_cis_nl${_cis_nl}These also look wrong:$_cis_incomplete"
         [ -n "$_cis_absent" ] && _cis_msg="$_cis_msg$_cis_nl${_cis_nl}These weren't found anywhere either (fix the problems above first, then run the script again to see if Setup can ask for these itself):$_cis_absent"
-        # If the installer itself was renamed, renaming it back is an alternative
         if [ "$_cis_stem" != "$_cis_orig" ]; then
             _cis_msg="$_cis_msg$_cis_nl${_cis_nl}The installer's own name has a download counter too. If the .bin files have the original names, renaming the installer back to \"$_cis_orig${_cis_exe#"$_cis_stem"}\" is enough."
         fi
@@ -557,7 +504,6 @@ check_installer_slices() {
     fi
 }
 
-# Loose check if dir is a wine prefix
 is_valid_prefix() {
     _wine_prefix="$1"
 
@@ -576,8 +522,7 @@ is_valid_prefix() {
     return 0
 }
 
-# Values of the zoom keys in the registry. Deliberately loose: several lines come back when
-# more than one game is installed.
+# Loose on purpose: several lines come back when more than one game is installed
 get_prefix_reg_val() {
     _wine_prefix="$1"
     _key="$2"
@@ -595,8 +540,7 @@ get_prefix_reg_val() {
     printf '%s\n' "$_res" # the line break is required for while read
 }
 
-# Check if wine prefix has a specific zoom game installed. $3 (optional): the installer's Inno
-# AppId, because old installers never write a Site GUID; Inno's uninstall key is the only trace
+# $3 (optional): the Inno AppId, since old installers never write a Site GUID
 prefix_has_game() {
     _wine_prefix="$1"
     _guid="$2"
@@ -627,7 +571,6 @@ prefix_has_game() {
     fi
 }
 
-# Check if wine prefix has any zoom game installed
 prefix_has_any_game() {
     _wine_prefix="$1"
 
@@ -635,7 +578,6 @@ prefix_has_any_game() {
     _tmp=$(mktemp)
     get_prefix_reg_val "$_wine_prefix" "InstallPath" > "$_tmp"
 
-    # More than one is valid when DLC is installed
     while read -r line; do
         if [ -d "$(PROTON_VERB=getnativepath umu_launch "$line")" ]; then
             _r=0
@@ -677,15 +619,11 @@ _lnk_readstr_utf16() {
 parse_lnk() {
     _lnkpath="$1"
 
-    # https://github.com/libyal/liblnk/blob/main/documentation/Windows%20Shortcut%20File%20(LNK)%20format.asciidoc#21-data-flags
     _flags_oct=$(od -An -j 20 -N 1 "$_lnkpath" | tr -d '\n ')
     _flags=$(printf '%s\n' "$_flags_oct" | dd status=none)
 
-    # https://github.com/libyal/liblnk/blob/main/documentation/Windows%20Shortcut%20File%20(LNK)%20format.asciidoc#3-link-target-identifier
     _itemlist_count=$(_lnk_read_block "$_lnkpath" 76 2)
 
-    # LinkInfo
-    # https://github.com/libyal/liblnk/blob/main/documentation/Windows%20Shortcut%20File%20(LNK)%20format.asciidoc#4-location-information
     _location_offset=$((_itemlist_count+78)) # skip guid
     _link_info_length=$(_lnk_read_block "$_lnkpath" $_location_offset 4)            # LinkInfoSize
     _link_info_header_size=$(_lnk_read_block "$_lnkpath" $((_location_offset+4)) 4) # LinkInfoHeaderSize
@@ -693,7 +631,6 @@ parse_lnk() {
     _basepath_offset=$(_lnk_read_block "$_lnkpath" $((_location_offset+16)) 4)      # LocalBasePathOffset
 
     _basepath_is_unicode=0
-    # Use unicode offset instead
     if [ "$_link_info_header_size" -gt 28 ]; then
         _basepath_offset=$(_lnk_read_block "$_lnkpath" $((_location_offset+28)) 4) # LocalBasePathOffsetUnicode
         _basepath_is_unicode=1
@@ -707,9 +644,7 @@ parse_lnk() {
 
     printf 'LocalBasePath:%s\n' "$_localpath"
 
-    # StringData
     # STRING_DATA = [NAME_STRING] [RELATIVE_PATH] [WORKING_DIR] [COMMAND_LINE_ARGUMENTS] [ICON_LOCATION]
-    # https://github.com/libyal/liblnk/blob/main/documentation/Windows%20Shortcut%20File%20(LNK)%20format.asciidoc#5-data-strings
     
     _stringdata_is_unicode=0
     # IsUnicode
@@ -743,18 +678,14 @@ parse_lnk() {
     done
 }
 
-# Whether a shortcut gets no launcher (uninstaller, PDFs, HTML manuals).
-# $1: target exe or document (wine's StartupWMClass is lowercase, parse_lnk's isn't, so both
-#     are lowercased here), $2: shortcut name. Returns 0 to skip.
+# wine's StartupWMClass is lowercase and parse_lnk's isn't, so both are lowercased here
 is_skipped_shortcut() {
     _skip_target=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
     _skip_name=$2
     case $_skip_target in
-        # Skip uninstaller and PDFs
         "unins000.exe" | *".pdf")
             return 0
             ;;
-        # Skip HTML manuals
         *".html" | *".htm")
             case $_skip_name in
                 *"Manual"*)
@@ -766,12 +697,8 @@ is_skipped_shortcut() {
     return 1
 }
 
-# Prints the Windows path of every shortcut (.lnk) this install created, from Inno's log
-# ("-- Icon entry --", then "Dest filename: C:\...\Game.lnk"). The log is recreated each run,
-# so in a shared prefix this only gives the shortcuts of the install that just ran.
 get_install_lnks() {
-    # CRLF endings. "Icon entry" arms the flag, the next "Dest filename:" is the shortcut, and any
-    # other "-- Xxx entry --" disarms it (so a File entry isn't mistaken for one).
+    # CRLF log: an Icon entry arms the flag, any other "-- Xxx entry --" disarms it (a File entry isn't a shortcut)
     awk '
         { sub("\r$", "") }
         /-- Icon entry --$/ { icon = 1; next }
@@ -784,11 +711,7 @@ get_install_lnks() {
     ' "$INSTALL_PATH/drive_c/zoom_installer.log"
 }
 
-# Prints the native path of every .lnk in the Start Menus and the Public Desktop. A shared
-# prefix holds every install's, so this run's are told apart by age: zoom_install_started is
-# touched right before the installer launches.
 # $1: "new" for those written since then, "old" for the rest
-# (Newlines in shortcut names aren't handled; Windows doesn't allow them.)
 list_lnks_on_disk() {
     _ll_drive_c="$INSTALL_PATH/drive_c"
     _ll_marker="$_ll_drive_c/zoom_install_started"
@@ -805,8 +728,6 @@ list_lnks_on_disk() {
          -iname '*.lnk' "$@" 2> /dev/null
 }
 
-# Fallback for get_install_lnks: this run's .lnk files found on disk (also finds Desktop-only
-# shortcuts). Prints Windows paths.
 find_install_lnks() {
     _fl_drive_c="$INSTALL_PATH/drive_c"
     list_lnks_on_disk new | while IFS= read -r _fl_lnk; do
@@ -816,22 +737,16 @@ find_install_lnks() {
     done
 }
 
-# What a shortcut launches: target, working dir, arguments. Empty if it can't be parsed.
-# $1: native path of the .lnk
 lnk_launch_signature() {
     parse_lnk "$1" 2> /dev/null | grep -E '^(LocalBasePath|WORKING_DIR|COMMAND_LINE_ARGUMENTS):'
 }
 
-# For a DLC's shortcut: compares it with same-named .lnk files from before this run (usually
-# the base game's). Returns 0 if one launches exactly the same thing (nothing to add), 2 if
-# there are same-named ones but this launches something else (the DLC's own), 1 if none.
-# $1: native path of this run's .lnk, $2: shortcut name
+# Returns 0 if a same-named .lnk launches the same thing, 2 if it launches something else, 1 if there is none
 compare_with_existing_lnk() {
     _cw_sig=$(lnk_launch_signature "$1")
     _cw_name=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
     _cw_result=1
-    # Compared by name here, not find -name: names can hold glob characters. Case-insensitive,
-    # like wine.
+    # By name, not find -name (names can hold glob characters); case-insensitive like wine
     while IFS= read -r _cw_other; do
         [ -n "$_cw_other" ] || continue
         _cw_base=${_cw_other##*/}
@@ -849,11 +764,7 @@ EOL
     return $_cw_result
 }
 
-# Whether a proton_shortcuts .desktop was written by wine during this run. Wine keeps one per
-# shortcut name for the whole prefix, so an old one (say the base game's, same name as a DLC's
-# shortcut) mustn't be taken for this run's. Wine rewrites it every run, so older than
-# zoom_install_started means not this run's.
-# $1: path of the .desktop
+# Wine keeps one .desktop per name for the whole prefix: older than zoom_install_started isn't from this run
 is_desktop_from_this_run() {
     _fr_marker="$INSTALL_PATH/drive_c/zoom_install_started"
     # Without the marker there's no telling, so trust what's there
@@ -861,30 +772,12 @@ is_desktop_from_this_run() {
     [ -n "$(find "$1" -newer "$_fr_marker" 2> /dev/null)" ]
 }
 
-# Shortcut name from its Windows path (filename without .lnk); wine names the .desktop after it
 get_lnk_name() {
     _gl_name=${1##*\\}
     printf '%s' "${_gl_name%.[lL][nN][kK]}"
 }
 
-# Makes sure every shortcut this install created has a proton_shortcuts/*.desktop.
-#
-# Wine's winemenubuilder writes those in the background, but it waits for the installer to
-# exit and the installer is killed first, so it rarely finishes. It's also disabled by
-# WINEDLLOVERRIDES="winemenubuilder.exe=d". So step 2 is the normal path, not a fallback.
-# 1. Any default-verb umu launch runs "wineserver -w" first, which waits for every process
-#    in the prefix.
-# 2. Shortcuts still without a .desktop from this run (is_desktop_from_this_run) get
-#    winemenubuilder run by hand, with the DLL override forced on for that call only.
-# 3. Whatever is still missing is reported by name (not fatal).
-#
-# Only this run's shortcuts are looked at (the installer's log, else .lnk files newer than the
-# start marker), never the rest of a shared prefix.
-# Sets SHORTCUTS_KEPT (how many get a launcher), INSTALL_SHORTCUTS and
-# INSTALL_DESKTOP_SHORTCUTS (names as "|name|name|": all of them, and the Desktop ones). An
-# empty list means nothing to make.
-# Output of the umu calls goes to drive_c/zoom_menubuilder.log.
-# Idea from upstream's 672c694 ("Run winemenubuilder manually").
+# Sets SHORTCUTS_KEPT, INSTALL_SHORTCUTS and INSTALL_DESKTOP_SHORTCUTS (names as "|name|name|")
 ensure_proton_shortcuts() {
     _sc_log="$INSTALL_PATH/drive_c/zoom_menubuilder.log"
     SHORTCUTS_KEPT=0
@@ -895,20 +788,17 @@ ensure_proton_shortcuts() {
     [ -n "$_sc_links" ] || _sc_links=$(find_install_lnks)
     if [ -z "$_sc_links" ]; then
         _sc_icon_count=$(get_header_val 'icon_count')
-        # Start Menu entries can't be disabled in the installer, so having none is worth reporting
         [ "${_sc_icon_count:-0}" -gt 0 ] && \
             log_error "The installer defines ${_sc_icon_count} shortcut(s) but none were created, so there are no launchers. The game is installed in \"$INSTALL_PATH\"."
     fi
 
-    # Sync point, see (1) above. Any cheap command works, hostname has no side effects.
-    # UMU_CONTAINER_NSENTER would switch umu to a verb that doesn't wait.
+    # Sync point: a default-verb umu call runs wineserver -w first; UMU_CONTAINER_NSENTER would switch to a verb that doesn't
     ( unset UMU_CONTAINER_NSENTER; umu_launch hostname ) >> "$_sc_log" 2>&1 < /dev/null
 
     _sc_missing=''
     _sc_nl='
 '
-    # Fed by a here-doc, not a pipe, so the counters survive (dash runs a pipe's right side in a
-    # subshell). umu calls get </dev/null so they can't swallow it.
+    # Here-doc, not a pipe, so the counters survive (dash); umu calls get </dev/null so they can't swallow it
     while IFS= read -r _sc_win; do
         [ -n "$_sc_win" ] || continue
         _sc_name=$(get_lnk_name "$_sc_win")
@@ -926,16 +816,12 @@ ensure_proton_shortcuts() {
 
         _sc_desktop="$PROTON_SHORTCUTS_PATH/$_sc_name.desktop"
         if [ -f "$_sc_desktop" ] && is_desktop_from_this_run "$_sc_desktop"; then
-            # Wine made it (one from an earlier install doesn't count, see below). The skip rules apply
-            # to the target wine recorded.
             is_skipped_shortcut "$(get_desktop_value "StartupWMClass" "$_sc_desktop")" "$_sc_name" && continue
             SHORTCUTS_KEPT=$((SHORTCUTS_KEPT+1))
             continue
         fi
 
-        # No .desktop: read the .lnk to skip the uninstaller and manuals without launching umu.
-        # C:\a\b.lnk -> <prefix>/drive_c/a/b.lnk; if the case differs (wine ignores case, the
-        # filesystem doesn't) ask wine for the real path.
+        # No .desktop: read the .lnk to skip the uninstaller and manuals without launching umu; if the case differs, ask wine
         _sc_rel=${_sc_win#?:\\}
         _sc_native="$INSTALL_PATH/drive_c/$(printf '%s' "$_sc_rel" | tr '\134' '/')" # \134 is a backslash
         if [ ! -f "$_sc_native" ]; then
@@ -945,8 +831,7 @@ ensure_proton_shortcuts() {
             log_error "Can't find the shortcut file for \"$_sc_name\" ($_sc_win), so it won't get a launcher."
             continue
         fi
-        # LocalBasePath is the target exe (backslashes doubled): keep just the exe name. A corrupt
-        # .lnk gives nothing, so it isn't skipped and winemenubuilder gets a go (reported if it fails).
+        # A corrupt .lnk gives nothing, so it isn't skipped and winemenubuilder gets a go
         _sc_exe=$(parse_lnk "$_sc_native" 2> /dev/null | sed -n 's/^LocalBasePath://p')
         _sc_exe=${_sc_exe##*\\}
         is_skipped_shortcut "$_sc_exe" "$_sc_name" && continue
@@ -960,20 +845,18 @@ EOL
     [ -n "$_sc_missing" ] || return 0
 
     printf '=== winemenubuilder for shortcuts wine did not create:\n%s' "$_sc_missing" >> "$_sc_log"
-    # Proton hides wine's messages unless PROTON_LOG is set; turn it on for this call only so a
-    # winemenubuilder failure ends up in our log.
+    # Proton hides wine's messages unless PROTON_LOG is set: on for this call only
     _sc_wine_log_dir="$INSTALL_PATH/drive_c/zoom_menubuilder_tmp"
     mkdir -p "$_sc_wine_log_dir"
     (
-        # One call for all of them, each .lnk its own argument, so odd names need no escaping
+        # One call, each .lnk its own argument, so odd names need no escaping
         set --
         while IFS= read -r _sc_win; do
             [ -n "$_sc_win" ] && set -- "$@" "$_sc_win"
         done <<EOL
 $_sc_missing
 EOL
-        # Force the DLL on for this call only (later entries win over a user's "=d"). It stays in
-        # this subshell.
+        # DLL on for this call only (a later entry wins over the user's =d); stays in this subshell
         WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}winemenubuilder.exe=b"
         PROTON_LOG=1
         PROTON_LOG_DIR="$_sc_wine_log_dir"
@@ -982,7 +865,6 @@ EOL
         ZOOM_FORWARD_ENV="WINEDLLOVERRIDES PROTON_LOG PROTON_LOG_DIR WINEDEBUG"
         umu_launch winemenubuilder "$@"
     ) >> "$_sc_log" 2>&1 < /dev/null
-    # Keep just wine's winemenubuilder lines, and drop the rest of Proton's log
     cat "$_sc_wine_log_dir"/*.log 2> /dev/null | grep -a 'menubuilder:' >> "$_sc_log"
     rm -rf "$_sc_wine_log_dir"
 
@@ -997,19 +879,8 @@ $_sc_missing
 EOL
 }
 
-# Reads a game-fixes file and prints one line per launcher: name|replaces|exe|workdir|args,
-# or !|name|reason for an unusable one. The file comes off the network and ends up in a
-# generated shell script, so every value is checked against allowed characters (none can hold
-# the | separator). Keys before the first [section] apply to the whole game; the three that
-# pin a Proton build come out as one line with an empty first field:
-#   |proton|tag|asset|sha512      or      !|proton|reason
-# The [wine registry] section holds one value per line, "HKCU\Software\...\name = dword:1" or
-# "= sz:text"; each comes out as @|key|name|type|data, or !|<line>|reason.
-# The [files] section names a zip, its checksum and the file names to copy out of it; it comes
-# out as one $|key|value line per key (zip, zip_sha512, files, config, backup, dll_override,
-# dll_overrides), or
-# !|files|reason.
-# $1: the file
+# Prints "name|replaces|exe|workdir|args" per launcher, "|proton|tag|asset|sha512", "@|key|name|type|data" per registry value,
+# "$|key|value" per [files] key and "!|name|reason" for anything unusable. Every value is checked: it ends up in a shell script.
 parse_game_fixes() {
     awk '
         function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -1213,9 +1084,6 @@ parse_game_fixes() {
     ' "$1"
 }
 
-# Looks for this game's file in game-fixes/ (named after its GUID) and puts the usable
-# launchers in GAME_FIXES ("name|replaces|exe|workdir|args" per line). The file is optional, so
-# failing to get it never stops the install. ZOOM_GAME_FIXES_FILE reads a local file instead.
 load_game_fixes() {
     GAME_FIXES=''
     GAME_FIXES_REGISTRY='' # "key|name|type|data" per value
@@ -1321,9 +1189,6 @@ EOL
     fi
 }
 
-# Sets the registry values of the game's fixes file. It runs after the installer, whose own
-# [Registry] entries (the game's key and paths) are written during the install. One umu call
-# runs a .bat of "reg add" lines. Every value passed parse_game_fixes, so none can break a line.
 apply_game_fix_registry() {
     [ -n "$GAME_FIXES_REGISTRY" ] || [ -n "$GAME_FIXES_REGISTRY_DELETE" ] || return 0
     _rg_bat="$INSTALL_PATH/drive_c/zoom_gamefixes.bat"
@@ -1356,10 +1221,6 @@ EOL
     fi
 }
 
-# Gets the zip of the [files] section into GAME_FILES_ZIP_PATH, checked against its SHA-512 from
-# the fixes file. ZOOM_GAME_FIXES_FILES_DIR=<folder> reads it from a local folder instead of the
-# network (needed before a new zip is on main). Any failure only warns: the game then stays as
-# ZOOM made it.
 fetch_game_fix_zip() {
     GAME_FILES_ZIP_PATH=''
     [ -n "$GAME_FILES_ZIP" ] || return 0
@@ -1393,8 +1254,6 @@ fetch_game_fix_zip() {
     GAME_FILES_ZIP_PATH=$_fz_file
 }
 
-# Unpacks a zip into an existing folder with whichever tool the system has. Returns 2 when there
-# is none. $1: the zip, $2: the folder
 unzip_to() {
     if command -v unzip > /dev/null; then
         unzip -q -o "$1" -d "$2"
@@ -1407,10 +1266,7 @@ unzip_to() {
     fi
 }
 
-# Prints the game's install folder as a path inside the prefix. Wine is asked for the "Inno Setup:
-# App Path" of this installer's uninstall key (the base game and its DLC write the same one), since
-# system.reg may not be written yet when the installer has just exited. Prints nothing and returns
-# 1 unless it is a plain C:\ path that exists.
+# Asks wine for Inno's App Path (system.reg may not be written yet when the installer has just exited)
 get_game_folder() {
     _gp_win=$( (umu_launch reg query "HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{$INNO_APPID}_is1" /v "Inno Setup: App Path" < /dev/null) 2> /dev/null |
         tr -d '\r' | sed -n 's/^.*Inno Setup: App Path[[:space:]]*REG_SZ[[:space:]]*//p' | head -n 1)
@@ -1429,11 +1285,6 @@ get_game_folder() {
     printf '%s\n' "$INSTALL_PATH/drive_c/$_gp_rel"
 }
 
-# Copies the files of the [files] section into the game's folder. Only the names from the fixes
-# file are used, never a path from the archive; each must be a plain file in the zip. A backup of
-# the originals is made once (NAME.orig), and config files are copied only when missing, so a
-# reinstall keeps what the user edited. Returns 1 if anything failed (the game folder may then
-# hold some of the files, but the caller sets no override).
 game_fix_files_copy() {
     if [ -z "${GAME_FILES_ZIP_PATH:-}" ]; then
         return 1 # fetch_game_fix_zip has said why
@@ -1521,10 +1372,7 @@ EOL
     [ $_cf_bad -eq 0 ]
 }
 
-# Runs after the installer. The DLL override is queued for apply_game_fix_registry only when every
-# file got copied. When the fixes file asks for an override and the copy failed, the override is
-# queued for removal instead: ZOOM's installer has just put its own DLL back, and an override left
-# over from an earlier run would load that one as native and crash the game.
+# Override is queued for removal when the copy failed: ZOOM's installer put its own DLL back and a leftover override would load it as native (crash)
 apply_game_fix_files() {
     [ -n "$GAME_FILES_ZIP" ] || return 0
     game_fix_files_copy
@@ -1550,7 +1398,6 @@ EOL
     fi
 }
 
-# Prints the SHA-512 of a file, with whichever tool the system has
 get_sha512() {
     if command -v sha512sum > /dev/null; then
         sha512sum "$1" | cut -d ' ' -f1
@@ -1561,10 +1408,6 @@ get_sha512() {
     fi
 }
 
-# Downloads a pinned Proton build into $PROTON_COMPAT_DIR, checked against the SHA-512 from
-# the fixes file. Unpacked next to its final place and moved in whole, so a half-unpacked
-# folder is never taken for a finished one. Warns and returns 1 if it can't be had.
-# $1: release tag, $2: asset (tarball name), $3: its SHA-512
 download_pinned_proton() {
     _dp_tag=$1
     _dp_asset=$2
@@ -1585,8 +1428,7 @@ download_pinned_proton() {
 
     log_info "Pinned Proton: downloading $_dp_asset (only needed the first time)..."
     rm -f "$_dp_file"
-    # --fail so an error page isn't saved as the tarball; the speed limit gives up on a stalled
-    # connection (there's no overall time limit on a big download)
+    # --fail so an error page isn't saved; the speed limit gives up on a stalled connection (no overall time limit)
     if ! curl -L --fail --progress-bar --connect-timeout 15 --speed-limit 1024 --speed-time 60 \
             -H "User-Agent: $HTTP_USER_AGENT" -o "$_dp_file" "$PROTON_GE_URL/$_dp_tag/$_dp_asset"; then
         rm -f "$_dp_file"
@@ -1611,12 +1453,10 @@ download_pinned_proton() {
         return 1
     fi
     rm -f "$_dp_file"
-    # Marks the build as ours, so the cleanup never touches a copy someone else installed
-    # (ProtonUp-Qt, a Steam game). Written before the mv: the note and the folder appear together.
+    # Marks the build as ours so the cleanup never touches one someone else installed; written before the mv so note and folder appear together
     printf '%s\n' "Downloaded by zoom-platform-darth.sh $INSTALLER_VERSION" > "$_dp_tmp/$_dp_name/$PROTON_NOTE"
 
-    # Another install may have finished this build meanwhile, then use its copy. mv would put
-    # ours inside an existing folder, so remove that if the race happens.
+    # If another install finished this build meanwhile, use its copy (mv would nest ours inside it)
     if [ ! -e "$_dp_dir" ]; then
         mv "$_dp_tmp/$_dp_name" "$_dp_dir" 2> /dev/null
         [ -d "$_dp_dir/$_dp_name" ] && rm -rf "${_dp_dir:?}/$_dp_name"
@@ -1629,10 +1469,6 @@ download_pinned_proton() {
     return 0
 }
 
-# Picks the Proton build for this game and makes sure it's there: the fixes file's, else the
-# prefix's (drive_c/zoom_proton, so a DLC or reinstall keeps the base game's), else none (umu
-# decides). Sets ZOOM_PROTONPATH and exports PROTONPATH when pinned. Failing to get it is
-# never fatal.
 ensure_pinned_proton() {
     ZOOM_PROTONPATH=''
     _pp_marker="$INSTALL_PATH/drive_c/zoom_proton"
@@ -1644,8 +1480,7 @@ ensure_pinned_proton() {
         _pp_sha=$GAME_FIXES_PROTON_SHA512
     elif [ -f "$_pp_marker" ]; then
         read -r _pp_name _pp_sha < "$_pp_marker"
-        # The name ends up in a path, so same check as in the fixes file (no regex group: expr exits
-        # 1 when the group matches nothing)
+        # The name ends up in a path; expr without an optional group (it exits 1 when the group matches nothing)
         _pp_base=${_pp_name%-x86_64}
         if ! expr "$_pp_base" : '^GE-Proton[0-9][0-9]*-[0-9][0-9]*$' > /dev/null; then
             _pp_name=''
@@ -1681,12 +1516,7 @@ ensure_pinned_proton() {
     log_info "Pinned Proton: this game runs on $_pp_name"
 }
 
-# Prints the GE-Proton builds that this script downloaded (they hold the $PROTON_NOTE file) and
-# that no game needs any more, one folder name per line. $1: a prefix to leave out, the one
-# being uninstalled. A build is kept when a ZOOM game's prefix names it in drive_c/zoom_proton,
-# or when Steam's config.vdf mentions it (read only; the shared folder may hold a Steam game's
-# build). A launcher link that leads nowhere may be a game on a disk that isn't mounted and
-# could need any build, so then nothing is printed. Same text in uninstall.sh: keep them equal.
+# Same text in uninstall.sh: keep them equal.
 find_unused_protons() {
     # Physical path, so a trailing slash or a symlink in the path still matches
     _fu_skip=''
@@ -1736,20 +1566,13 @@ find_unused_protons() {
     done
 }
 
-# Prints the launch script lines for a pinned game (nothing otherwise). The folder is shared
-# and tools like ProtonUp-Qt can delete it, so the script checks it's still there, else starts
-# on umu's own Proton and says so. A launch never downloads anything.
 pinned_proton_launch_lines() {
     [ -n "$ZOOM_PROTONPATH" ] || return 0
     _pl_msg=$(quote_sq "${ZOOM_PROTONPATH##*/} (pinned for $GAME_NAME_SAFE) was removed, so the default Proton is used. Reinstall the game (it needs internet) to get it back.")
     _pl_title=$(quote_sq "$GAME_NAME_SAFE")
-    # Build name without the architecture, to keep the notification short
     _pl_ver=${ZOOM_PROTONPATH##*/}
     _pl_note=$(quote_sq "${_pl_ver%-x86_64} removed. Reinstall the game.")
-    # The terminal message goes unseen when launched from the menu, so it's also shown on the
-    # desktop with the first tool that works (Pop!_OS has no notify-send): notify-send, gdbus,
-    # dbus-send, kdialog, zenity (backgrounded, so it doesn't hold up the game). Notifications
-    # get a short text since GNOME shows about 40 characters; only zenity shows the full message.
+    # Notifiers in order: notify-send, gdbus, dbus-send, kdialog, zenity (Pop!_OS has no notify-send); GNOME shows ~40 characters, so a short text
     printf '%s\n' \
         "# This game is pinned to a tested Proton build. If that folder was removed, umu's own" \
         "# Proton is used instead. Nothing is downloaded here." \
@@ -1768,11 +1591,8 @@ pinned_proton_launch_lines() {
         "fi"
 }
 
-# Writes a launch script and, unless desktop entries are off, its menu entry.
-# $1 launcher name (file name), $2 menu entry name, $3 working dir, $4 exe (Windows paths
-# with doubled backslashes, since they sit between double quotes), $5 args (unquoted in the
-# script), $6 icon file (may be empty), $7 StartupWMClass, $8 the installer shortcut this is
-# for (Desktop link)
+# Args: name (file), menu name, workdir, exe (Windows paths, backslashes doubled: they sit between double quotes), args (unquoted),
+# icon file (may be empty), StartupWMClass, the installer shortcut this is for (Desktop link)
 make_launcher() {
     _ml_filename=$1
     _ml_name=$2
@@ -1783,7 +1603,6 @@ make_launcher() {
     _ml_wmclass=$7
     _ml_shortcut=$8
 
-    # Empty unless the game is pinned to a Proton build
     _ml_pin=$(pinned_proton_launch_lines)
     _ml_nl='
 '
@@ -1798,8 +1617,7 @@ EOL
     LAUNCHERS_MADE=$((LAUNCHERS_MADE+1))
     LAUNCHER_MAP="$LAUNCHER_MAP$_ml_shortcut|$_ml_filename$_nl"
 
-    # Desktop entries handle special characters badly, so the entry points at a script symlinked
-    # under a plain path
+    # Desktop entries handle special characters badly: point at a script symlinked under a plain path
     if [ "$CREATE_DESKTOP_ENTRIES" -eq 1 ]; then
         _ml_desktopfile="$ZOOM_SHORTCUTS_PATH/$_ml_filename.desktop"
         _ml_fsum=$(printf '%s' "$_ml_filename" | cksum | cut -d ' ' -f1)
@@ -1824,11 +1642,7 @@ EOL
     fi
 }
 
-# Makes the launchers a game's fixes file has for an installer shortcut, in its place.
-# Returns 0 if any were made; 1 if none apply or none could be made (say the exe isn't where
-# the file expects), and then the caller makes the shortcut's own launcher.
-# $1 shortcut name, $2 its target as parse_lnk prints it (the file's exe and workdir start
-# from it), $3 icon file (may be empty)
+# Returns 0 if any launcher was made, 1 if none apply or none could be made (the caller then makes the shortcut's own)
 make_fixed_launchers() {
     _fx_shortcut=$1
     _fx_target=$(printf '%s' "$2" | sed 's/\\\\/\\/g') # plain backslashes, for umu
@@ -1842,7 +1656,7 @@ make_fixed_launchers() {
         [ "$_fx_replaces" = "$_fx_shortcut" ] || continue
         _fx_matched=$((_fx_matched+1))
 
-        # Skip launchers for missing files. umu gets /dev/null so it can't swallow the rest of the fixes.
+        # Skip launchers for missing files; umu gets /dev/null so it can't swallow the rest of the fixes
         _fx_winexe="$_fx_base\\$_fx_exe"
         _fx_native=$( (PROTON_VERB=getnativepath umu_launch "$_fx_winexe" < /dev/null) 2> /dev/null | head -n 1)
         if [ ! -f "$_fx_native" ]; then
@@ -1874,10 +1688,6 @@ EOL
     return 1
 }
 
-# Writes uninstall.sh: a preamble of single-quoted assignments baking in this install's paths
-# (via quote_sq, so odd characters can't break it) and a static quoted heredoc that does the
-# work.
-# $1: every applications-menu group ever installed into this prefix, one per line
 write_uninstaller() {
     _wu_groups=$1
 
@@ -2422,10 +2232,6 @@ done
 
 [ -z "$INSTALL_PATH" ] && INSTALL_PATH=$2
 
-# --remove-unused-proton: lists the GE-Proton builds nothing needs any more and removes them after
-# a y/N (--yes skips it, for scripts and cron: the question is read from the terminal itself, so
-# piped input can't answer it). Needs no innoextract, umu or network. Terminal only, so errors
-# are log_error + exit 1.
 if [ "$REMOVE_UNUSED_PROTON" -eq 1 ]; then
     _rp_list=$(find_unused_protons '')
     if [ -z "$_rp_list" ]; then
@@ -2471,7 +2277,6 @@ EOL
     exit $_rp_failed
 fi
 
-# Unpack innoextract into tmp
 base64_dec "$(get_innoext_string)" > $INNOEXT_BIN
 PAYLOAD_DECODED_STATUS=$?
 [ $PAYLOAD_DECODED_STATUS -ne 0 ] && fatal_error "Could not decode base64." "Error unpacking innoextract"
@@ -2482,9 +2287,6 @@ else
     fatal_error "Could not decode base64." "Error unpacking innoextract"
 fi
 
-# --guid: print the installer's game ID (lowercase, as fix files are named) and stop, before
-# umu or any writes. The network is used only for an installer that has no ZOOM game ID. Only
-# the ID goes to stdout.
 if [ -n "$GUID_INSTALLER" ]; then
     if [ ! -r "$GUID_INSTALLER" ]; then
         log_error "Can't read \"$GUID_INSTALLER\"."
@@ -2507,7 +2309,6 @@ if [ -n "$GUID_INSTALLER" ]; then
     exit 0
 fi
 
-# Check if UMU is installed
 if command -v umu-run > /dev/null; then
     UMU_BIN=umu-run
     log_info "Using umu native"
@@ -2525,7 +2326,6 @@ else
     download_umu_zipapp "$_umu_url"
 fi
 
-# If dialogs are usable and installer wasn't specified, show a dialog
 if [ $CAN_USE_DIALOGS -eq 1 ] && [ -z "$INPUT_INSTALLER" ]; then
     INPUT_INSTALLER=$(dialog_installer_select)
     case $? in
@@ -2538,7 +2338,6 @@ if [ $CAN_USE_DIALOGS -eq 1 ] && [ -z "$INPUT_INSTALLER" ]; then
     esac
 fi
 
-# Show usage if can't use dialogs and no paths passed
 if [ $CAN_USE_DIALOGS -eq 0 ]; then
     if [ -z "$INPUT_INSTALLER" ] || [ -z "$INSTALL_PATH" ]; then
         log_error "Cannot use dialogs, please specify INSTALLER and DEST."
@@ -2547,20 +2346,17 @@ if [ $CAN_USE_DIALOGS -eq 0 ]; then
     fi
 fi
 
-# Show an error if can't read installer
 if ! test_file_perms r "$INPUT_INSTALLER" ; then
     _msg="Installer either does not exist or $([ "$UMU_BIN" = "FLATPAK" ] && printf "umu Flatpak does not have" || printf "no") read permissions."
     fatal_error "$_msg"
 fi
 
-# Validate and get some info from installer
 if ! resolve_game_guid "$INPUT_INSTALLER"; then
     fatal_error "This doesn't seem to be a ZOOM Platform installer.
 If you think this is an error, please submit a bug report:
 $REPO_PATH/issues" "Invalid ZOOM Platform Installer"
 fi
-# Empty only when an old installer has no ZOOM game ID and the list couldn't be fetched; the
-# prefix may still know it (see below)
+# Empty only when an old installer has no ZOOM game ID and the list couldn't be fetched; the prefix may still know it
 ZOOM_GUID=$GAME_GUID
 case $GAME_GUID_FROM in
     list)
@@ -2575,13 +2371,11 @@ get_header_val () {
     printf '%s' "$INSTALLER_INFO" | sed -n "s/^$1: \"\(.*\)\"/\1/p; s/^$1: \(.*\)/\1/p" # Handles with and without quotes
 }
 
-INNO_APPID=$(get_header_val 'app_id' | sed 's/[{}]//g') # Strip {{}
+INNO_APPID=$(get_header_val 'app_id' | sed 's/[{}]//g')
 
-# Check if installer is for DLC
 IS_DLC=0
 [ "$(get_header_val 'default_dir_name')" = "{code:GetInstallationPath}" ] && IS_DLC=1
 
-# Show installer info
 printf "
 Title: \033[32;1m%s\033[0m 
 Publisher: \033[39;49;1m%s\033[0m
@@ -2595,13 +2389,10 @@ IS DLC: \033[39;49;1m%s\033[0m
 "${ZOOM_GUID:-unknown (no connection)}" \
 "$([ "$IS_DLC" -eq 1 ] && printf "yes" || printf "no")"
 
-# Split installers: make sure all the .bin files are there before anything is touched
 check_installer_slices
 
-# Open file selector if DEST wasn't given
 if [ -z "$INSTALL_PATH" ]; then
     if [ $CAN_USE_DIALOGS -eq 1 ]; then
-        # If DLC, ask user to select prefix where base game was installed
         if [ $IS_DLC -eq 1 ]; then
             dialog_msgbox info "DLC Installer Chosen" \
                 "$(get_header_val 'app_name')\n\nSelect the same directory you chose when you installed the base game in the next prompt."
@@ -2623,7 +2414,6 @@ if [ -z "$INSTALL_PATH" ]; then
     fi
 fi
 
-# Flatpak only: the destination may not exist yet, so its nearest existing folder is tested
 if [ "$UMU_BIN" = "FLATPAK" ] && ! _dest_checked=$(test_dest_writable "$INSTALL_PATH"); then
     _nl='
 '
@@ -2631,15 +2421,13 @@ if [ "$UMU_BIN" = "FLATPAK" ] && ! _dest_checked=$(test_dest_writable "$INSTALL_
     if [ "$_dest_checked" != "$INSTALL_PATH" ]; then
         _msg="$_msg${_nl}(it doesn't exist yet, so this was checked: $_dest_checked)"
     fi
-    # Also prints the message in the terminal, not just in the popup
     fatal_error "$_msg" "No permissions"
 fi
 
 export WINEPREFIX="$INSTALL_PATH"
 export GAMEID="zoominstall"
 
-# An installer with no ZOOM game ID: the prefix remembers the ID its first install used, so a
-# reinstall or DLC keeps it even offline (or if the list changes)
+# No ZOOM game ID inside: the prefix remembers the ID of its first install, so a reinstall or DLC keeps it even offline
 if [ "$GAME_GUID_FROM" != installer ]; then
     _zg_marker="$INSTALL_PATH/drive_c/zoom_guid"
     _zg_saved=''
@@ -2653,37 +2441,30 @@ if [ "$GAME_GUID_FROM" != installer ]; then
     fi
 fi
 
-# Safety checks: the destination must be empty, or an existing wine prefix holding the same
-# game (update) or, for DLC, some ZOOM game. A DLC installer checks itself that it's the
-# right game.
+# The destination must be empty, or a wine prefix with the same game (update) or, for DLC, some ZOOM game
 if is_valid_prefix "$INSTALL_PATH"; then
-    # Same game is installed on this prefix, must be updating or reinstalling
     if prefix_has_game "$INSTALL_PATH" "$ZOOM_GUID" "$INNO_APPID"; then
         log_info "Detected the same game installed in this prefix! [$ZOOM_GUID]"
     else
         if prefix_has_any_game "$INSTALL_PATH"; then
-            # Don't let user put different games in a prefix
             if [ $IS_DLC -eq 0 ]; then
                 fatal_error "Invalid install directory. A different game is already installed here."
             fi
         else
-            # Dont allow installing DLC if no other game is here
             if [ $IS_DLC -eq 1 ]; then
                 fatal_error "Invalid install directory. When installing DLC, choose the directory you installed the base game in."
             fi
         fi
     fi
-# must be empty or not exist
 elif [ -d "$INSTALL_PATH" ] && [ -n "$(ls -A "$INSTALL_PATH")" ]; then
     fatal_error "Install directory must either be empty or an existing wine prefix if updating a game."
 fi
 
 # A pinned Proton build must be settled before the first umu call, which creates the prefix
-load_game_fixes # optional, sets GAME_FIXES and the pinned Proton
-ensure_pinned_proton # sets ZOOM_PROTONPATH, and PROTONPATH, only when the game is pinned
+load_game_fixes
+ensure_pinned_proton
 fetch_game_fix_zip # the zip of the [files] section, checked now so a bad one shows before the long install
 
-# Inno inf: hides the pages the user shouldn't change
 mkdir -p "$INSTALL_PATH/drive_c"
 [ "$GAME_GUID_FROM" = installer ] || printf '%s\n' "$ZOOM_GUID" > "$INSTALL_PATH/drive_c/zoom_guid"
 cat >"$INSTALL_PATH/drive_c/zoom_installer.inf" <<EOL
@@ -2696,10 +2477,8 @@ DisableProgramGroupPage=yes
 DisableReadyPage=yes
 EOL
 
-# These reg values must exist before the installer runs, to skip the directory page and the
-# Windows shortcuts.
+# These reg values must exist before the installer runs, to skip the directory page and the Windows shortcuts
 
-# Not needed for a DLC or an already installed game.
 if [ $IS_DLC -eq 0 ] && ! prefix_has_game "$INSTALL_PATH" "$ZOOM_GUID" "$INNO_APPID"; then
     cat >"$INSTALL_PATH/drive_c/zoom_regkeys.bat" <<EOL
 @echo off
@@ -2716,17 +2495,12 @@ EOL
 fi
 
 printf "\n" > "$INSTALL_PATH/drive_c/zoom_installer.log"
-# Anything written from here on is newer than this file, which tells this run's shortcuts
-# apart from a shared prefix's older ones (see list_lnks_on_disk)
+# Anything written from here on is newer than this file: that tells this run's shortcuts from a shared prefix's older ones
 : > "$INSTALL_PATH/drive_c/zoom_install_started"
 
-# Disabled: silent install only works without custom components, and that can't be checked
-# reliably yet
 VERYSILENT=0
-# [ -z "$(get_header_val 'component_count')" ] || [ "$(get_header_val 'component_count')" -eq 0 ] && VERYSILENT=1
 
-# Launch the installer in the background (/ZOOMINSTALLERGUID is only a marker for pkill -f).
-# SLICES_NOT_FOUND: warn so Setup's own "next disk" dialog isn't a surprise mid-install
+# /ZOOMINSTALLERGUID is only a marker for pkill -f
 [ -n "$SLICES_NOT_FOUND" ] && log_info "Setup will still ask for these installer data files by name:$SLICES_NOT_FOUND"
 log_info "Launching installer..."
 umu_launch "$INPUT_INSTALLER" \
@@ -2737,7 +2511,6 @@ umu_launch "$INPUT_INSTALLER" \
     /ZOOMINSTALLERGUID="$ZOOM_GUID" \
     "$([ "$VERYSILENT" -eq 1 ] && printf "/VERYSILENT")" &
 
-# Watch the install log
 _currentfile=0
 # Some installers (DLC) omit icon_count; default to 0 so $(( )) doesn't die
 _header_file_count=$(get_header_val 'file_count')
@@ -2758,7 +2531,6 @@ while [ $_readlog -eq 1 ]; do
                 ;;
         esac
 
-        # Handle killing process based on if silent install chosen
         if [ "$VERYSILENT" -eq 1 ]; then
             case $line in
                 *"Log closed."*)
@@ -2789,7 +2561,6 @@ while [ $_readlog -eq 1 ]; do
     done
 done < "$INSTALL_PATH/drive_c/zoom_installer.log"
 
-# Query API for UMU ID
 UMU_ID="$(get_umu_id "$ZOOM_GUID")"
 UMU_ID_EXIT=$?
 [ $UMU_ID_EXIT -gt 0 ] && UMU_ID="0"
@@ -2814,16 +2585,15 @@ APPLICATIONS_PATH="$APPLICATIONS_ROOT/$GAME_NAME_SAFE"
 ZOOM_SHORTCUTS_PATH="$INSTALL_PATH/drive_c/zoom_shortcuts"
 log_info "Creating desktop entries..."
 mkdir -p "$ZOOM_SHORTCUTS_PATH"
-ensure_proton_shortcuts # waits for wine to create the shortcuts and fills in any it missed
+ensure_proton_shortcuts
 LAUNCHERS_MADE=0
 DUPLICATE_SHORTCUTS=0 # this run's shortcuts that are copies of ones already there, so get no launcher
-# "<shortcut name>|<launcher name>" per launcher made, for the Desktop links (they differ for a
-# DLC's shortcut named like one of the base game's)
+# "<shortcut name>|<launcher name>" per launcher made, for the Desktop links (a DLC shortcut named like a base game one differs)
 LAUNCHER_MAP=''
 _nl='
 '
 for file in "$PROTON_SHORTCUTS_PATH"/*.desktop; do
-    [ ! -f "$file" ] && continue # safety check if .desktop exists
+    [ ! -f "$file" ] && continue
 
     _filename=$(basename "$file" ".desktop")
     # proton_shortcuts holds every install's shortcuts; only this run's get launchers
@@ -2833,17 +2603,14 @@ for file in "$PROTON_SHORTCUTS_PATH"/*.desktop; do
     esac
     _shortcut_name=$_filename # what the installer called it; _filename may become the launcher's name below
 
-    # Get some values from the .desktop
     _name="$(get_desktop_value "Name" "$file")"
     _lnkpathwin="$(get_desktop_value "Exec" "$file")"
     _wmclass="$(get_desktop_value "StartupWMClass" "$file")"
     _iconname="$(get_desktop_value "Icon" "$file")"
 
-    # Skip certain shortcuts
     is_skipped_shortcut "$_wmclass" "$_name" && continue
 
-    # Unescape the Windows path: Wine 11 (GE-Proton 11) quotes the whole value, older wine
-    # escapes spaces as "\ "; either way every backslash is doubled twice.
+    # Wine 11 (GE-Proton 11) quotes the whole value, older wine escapes spaces as "\ "; either way every backslash is doubled twice
     case $_lnkpathwin in
         \"*\")
             _lnkpathwin=${_lnkpathwin#\"}
@@ -2856,9 +2623,7 @@ for file in "$PROTON_SHORTCUTS_PATH"/*.desktop; do
         log_error "Couldn't read the shortcut \"$_shortcut_name\" ($_lnkpathwin), so it won't get a launcher."
         continue
     fi
-    # A DLC shortcut may share a name with a base game one (same .desktop, launch script and menu
-    # entry). Same launch: nothing to add. Different: kept under the DLC's name so the base game's
-    # launcher isn't overwritten.
+    # A DLC shortcut named like a base game one: same launch = nothing to add; different = kept under the DLC's name so the base launcher survives
     if [ $IS_DLC -eq 1 ]; then
         compare_with_existing_lnk "$_lnkpathlinux" "$_shortcut_name"
         case $? in
@@ -2877,36 +2642,29 @@ for file in "$PROTON_SHORTCUTS_PATH"/*.desktop; do
         esac
     fi
 
-    # Get values from .lnk
     _lnk="$(parse_lnk "$_lnkpathlinux")"
     _lnk_exe=$(printf '%s' "$_lnk" | sed -n 's/LocalBasePath://p')
     _lnk_workingdir=$(printf '%s' "$_lnk" | sed -n 's/WORKING_DIR://p')
     _lnk_args=$(printf '%s' "$_lnk" | sed -n 's/COMMAND_LINE_ARGUMENTS://p')
 
-    # Absolute path of the largest icon. No Icon= means no icon: searching "*.png" would pick
-    # another shortcut's.
+    # Largest icon. No Icon= means no icon: searching "*.png" would pick another shortcut's
     _iconpath=""
     if [ -n "$_iconname" ]; then
         _iconfile=$(find "$PROTON_SHORTCUTS_PATH/icons" -type f -name "*$_iconname.png" -printf '%P\n' 2> /dev/null | sort -n -tx -k1 -r | head -n 1)
         [ -n "$_iconfile" ] && _iconpath="$PROTON_SHORTCUTS_PATH/icons/$_iconfile"
     fi
 
-    # A game fix (game-fixes/) can replace this shortcut with launchers of its own
     make_fixed_launchers "$_shortcut_name" "$_lnk_exe" "$_iconpath" && continue
 
     make_launcher "$_filename" "$_name" "$_lnk_workingdir" "$_lnk_exe" "$_lnk_args" "$_iconpath" "$_wmclass" "$_shortcut_name"
 done
 
-# The install can look successful while having no launcher at all, so say so
 if [ $((SHORTCUTS_KEPT-DUPLICATE_SHORTCUTS)) -gt 0 ] && [ "$LAUNCHERS_MADE" -eq 0 ]; then
     log_error "The installer created $SHORTCUTS_KEPT shortcut(s) but no launch scripts could be made from them. The game is installed, but new launchers weren't created (any you already had were left as they are). See \"$INSTALL_PATH/drive_c/zoom_menubuilder.log\""
 fi
 
-# The prefix may hold several installs (base game + DLC) that share one $ZOOM_GUID and are
-# wiped together, so the uninstaller must clean up every applications dir made in it. Each
-# install writes its group as "IconGroup" in system.reg, read back with get_prefix_reg_val,
-# plus $GAME_NAME_SAFE itself (wine may not have flushed its key yet). Anything that isn't a
-# bare directory name is dropped, since it ends up in rm -rf.
+# Every applications dir made in this prefix (base game + DLC share it and are wiped together): IconGroup values plus this game's name
+# (wine may not have flushed its key yet). Anything that isn't a bare directory name is dropped: it ends up in rm -rf.
 _icon_groups="$(
     {
         get_prefix_reg_val "$INSTALL_PATH" 'IconGroup'
@@ -2920,12 +2678,8 @@ _icon_groups="$(
     done
 )"
 
-# The Desktop symlinks don't exist yet, so the uninstaller scans the Desktop at uninstall time
-# and removes only symlinks pointing into a known applications dir, leaving other files alone.
 write_uninstaller "$_icon_groups"
 
-# Symlink to the XDG Desktop the launchers whose shortcut this run's installer put on the
-# Desktop (names match the Start Menu ones). An earlier install's Desktop shortcut isn't touched.
 if [ $CREATE_DESKTOP_ENTRIES -eq 1 ]; then
     while IFS='|' read -r _shortcut_name _launcher_name; do
         [ -n "$_shortcut_name" ] || continue
