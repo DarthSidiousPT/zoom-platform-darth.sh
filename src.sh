@@ -44,20 +44,16 @@ get_innoext_string() {
 dialog_installer_select() {
     if [ $USE_ZENITY -eq 1 ]; then
         zenity --file-selection --title="Select a ZOOM Platform installer"
-        return $?
     else
         kdialog --getopenfilename . "ZOOM Platform Windows installer(*.exe)" --title "Select a ZOOM Platform installer"
-        return $?
     fi
 }
 
 dialog_install_dir_select() {
     if [ $USE_ZENITY -eq 1 ]; then
         zenity --file-selection --directory --title="Select an installation directory"
-        return $?
     else
         kdialog --getexistingdirectory . --title "Select an installation directory"
-        return $?
     fi
 }
 
@@ -75,8 +71,6 @@ dialog_msgbox() {
     _title=$2
     _msg=$(wrap_dialog_msg "$3")
 
-    [ -z "$_title" ] && _title=""
-
     _param=''
     case $_type in
         "info") [ $USE_ZENITY -eq 1 ] && _param='info' || _param='msgbox' ;;
@@ -86,10 +80,8 @@ dialog_msgbox() {
 
     if [ $USE_ZENITY -eq 1 ]; then
         zenity --no-wrap --$_param --text="$_msg" --title="$_title"
-        return $?
     else
         kdialog --$_param "$_msg" --title "$_title"
-        return $?
     fi
 }
 
@@ -238,11 +230,8 @@ quote_sq() {
 
 download_umu_zipapp() {
     _url="$1"
-    _url_resp=$(curl -o "$CACHE_DIR"/umu-launcher.tar.xz "$_url" -Ls -H "User-Agent: $HTTP_USER_AGENT")
-    _url_exit=$?
-    if [ $_url_exit -ne 0 ]; then
+    curl -o "$CACHE_DIR"/umu-launcher.tar.xz "$_url" -Ls -H "User-Agent: $HTTP_USER_AGENT" ||
         fatal_error "Could not download umu-launcher. Please install it manually."
-    fi
 
     if ! command -v tar > /dev/null; then
         fatal_error "tar was not found on this system."
@@ -620,14 +609,13 @@ parse_lnk() {
     _lnkpath="$1"
 
     _flags_oct=$(od -An -j 20 -N 1 "$_lnkpath" | tr -d '\n ')
-    _flags=$(printf '%s\n' "$_flags_oct" | dd status=none)
+    _flags=$_flags_oct
 
     _itemlist_count=$(_lnk_read_block "$_lnkpath" 76 2)
 
     _location_offset=$((_itemlist_count+78)) # skip guid
     _link_info_length=$(_lnk_read_block "$_lnkpath" $_location_offset 4)            # LinkInfoSize
     _link_info_header_size=$(_lnk_read_block "$_lnkpath" $((_location_offset+4)) 4) # LinkInfoHeaderSize
-    _link_info_flags=$(_lnk_read_block "$_lnkpath" $((_location_offset+8)) 4)       # LinkInfoFlags
     _basepath_offset=$(_lnk_read_block "$_lnkpath" $((_location_offset+16)) 4)      # LocalBasePathOffset
 
     _basepath_is_unicode=0
@@ -1407,7 +1395,7 @@ download_pinned_proton() {
         log_warning "Pinned Proton: tar was not found on this system"
         return 1
     fi
-    if ! mkdir -p "$CACHE_DIR" "$PROTON_COMPAT_DIR"; then
+    if ! mkdir -p "$PROTON_COMPAT_DIR"; then
         log_warning "Pinned Proton: couldn't create $PROTON_COMPAT_DIR"
         return 1
     fi
@@ -2240,9 +2228,7 @@ EOL
     exit $_rp_failed
 fi
 
-base64_dec "$(get_innoext_string)" > $INNOEXT_BIN
-PAYLOAD_DECODED_STATUS=$?
-[ $PAYLOAD_DECODED_STATUS -ne 0 ] && fatal_error "Could not decode base64." "Error unpacking innoextract"
+base64_dec "$(get_innoext_string)" > $INNOEXT_BIN || fatal_error "Could not decode base64." "Error unpacking innoextract"
 if [ -s "$INNOEXT_BIN" ]; then
     chmod +x $INNOEXT_BIN
     $INNOEXT_BIN --version > /dev/null 2>&1 || fatal_error "Cannot launch $INNOEXT_BIN"
@@ -2461,8 +2447,6 @@ printf "\n" > "$INSTALL_PATH/drive_c/zoom_installer.log"
 # Anything written from here on is newer than this file: that tells this run's shortcuts from a shared prefix's older ones
 : > "$INSTALL_PATH/drive_c/zoom_install_started"
 
-VERYSILENT=0
-
 # /ZOOMINSTALLERGUID is only a marker for pkill -f
 [ -n "$SLICES_NOT_FOUND" ] && log_info "Setup will still ask for these installer data files by name:$SLICES_NOT_FOUND"
 log_info "Launching installer..."
@@ -2471,8 +2455,7 @@ umu_launch "$INPUT_INSTALLER" \
     /SP- \
     /LOADINF=C:\\zoom_installer.inf \
     /LOG=C:\\zoom_installer.log \
-    /ZOOMINSTALLERGUID="$ZOOM_GUID" \
-    "$([ "$VERYSILENT" -eq 1 ] && printf "/VERYSILENT")" &
+    /ZOOMINSTALLERGUID="$ZOOM_GUID" &
 
 _currentfile=0
 # Some installers (DLC) omit icon_count; default to 0 so $(( )) doesn't die
@@ -2494,39 +2477,27 @@ while [ $_readlog -eq 1 ]; do
                 ;;
         esac
 
-        if [ "$VERYSILENT" -eq 1 ]; then
-            case $line in
-                *"Log closed."*)
-                    printf "\n"
-                    log_info "Installer finished!"
-                    _readlog=0
-                    ;;
-            esac
-        else
-            case $line in
-                *"Need to restart Windows?"*) # User shouldn't launch the game through the option supplied by Inno, kill installer asap
-                    printf "\n\r"
-                    log_info "Installer finished! Force closing."
-                    printf "\r"
-                    pkill -f "/ZOOMINSTALLERGUID=$ZOOM_GUID"
-                    printf "\r"
-                    _readlog=0
-                    ;;
-                *"Log closed."*) # Shouldn't be able to get to this point if killed by above
-                    _readlog=0
-                    printf "\n\r"
-                    pkill -f "/ZOOMINSTALLERGUID=$ZOOM_GUID"
-                    printf "\r"
-                    fatal_error "Installer failed or canceled."
-                    ;;
-            esac
-        fi
+        case $line in
+            *"Need to restart Windows?"*) # User shouldn't launch the game through the option supplied by Inno, kill installer asap
+                printf "\n\r"
+                log_info "Installer finished! Force closing."
+                printf "\r"
+                pkill -f "/ZOOMINSTALLERGUID=$ZOOM_GUID"
+                printf "\r"
+                _readlog=0
+                ;;
+            *"Log closed."*) # Shouldn't be able to get to this point if killed by above
+                _readlog=0
+                printf "\n\r"
+                pkill -f "/ZOOMINSTALLERGUID=$ZOOM_GUID"
+                printf "\r"
+                fatal_error "Installer failed or canceled."
+                ;;
+        esac
     done
 done < "$INSTALL_PATH/drive_c/zoom_installer.log"
 
-UMU_ID="$(get_umu_id "$ZOOM_GUID")"
-UMU_ID_EXIT=$?
-[ $UMU_ID_EXIT -gt 0 ] && UMU_ID="0"
+UMU_ID=$(get_umu_id "$ZOOM_GUID") || UMU_ID=0
 
 
 CREATE_DESKTOP_ENTRIES=1
