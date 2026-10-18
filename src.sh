@@ -20,8 +20,13 @@ UMU_FLATPAK=org.openwinecomponents.umu.umu-launcher
 CACHE_DIR="$HOME"/.cache/zoom-platform
 PROTON_COMPAT_DIR="$HOME"/.local/share/Steam/compatibilitytools.d
 PROTON_NOTE=.zoom-platform-downloaded
-PROTON_GE_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download"
+PROTON_GE_URL=${ZOOM_GE_URL:-https://github.com/GloriousEggroll/proton-ge-custom/releases/download}
+PROTON_GE_LATEST_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/latest"
 ZOOM_PROTONPATH=''
+OPT_GE_PROTON=''
+OPT_UMU_PROTON=0
+RESTORE_PROTON=''
+ARGS_GIVEN=0
 NL='
 '
 
@@ -1090,7 +1095,7 @@ EOL
         log_info "Game fixes: $_gf_reg_count registry value(s) for this game"
     fi
     if [ -n "$GAME_FIXES_PROTON" ]; then
-        log_info "Game fixes: this game is pinned to $GAME_FIXES_PROTON"
+        log_info "Game fixes: this game was tested on $GAME_FIXES_PROTON"
     fi
 }
 
@@ -1294,6 +1299,63 @@ get_sha512() {
     fi
 }
 
+read_proton_marker() {
+    PM_NAME=''
+    PM_SHA=''
+    [ -f "$1/drive_c/zoom_proton" ] || return 1
+    read -r PM_NAME PM_SHA < "$1/drive_c/zoom_proton" || :
+    if ! expr "${PM_NAME%-x86_64}" : '^GE-Proton[0-9][0-9]*-[0-9][0-9]*$' > /dev/null; then
+        PM_NAME=''
+        PM_SHA=''
+        return 1
+    fi
+}
+
+resolve_ge_latest() {
+    if [ -n "${ZOOM_GE_LATEST:-}" ]; then
+        _gl_tag=$ZOOM_GE_LATEST
+    else
+        _gl_url=$(http -s --max-time 15 -o /dev/null -w '%{redirect_url}' "$PROTON_GE_LATEST_URL" 2> /dev/null)
+        _gl_tag=${_gl_url##*/}
+    fi
+    expr "$_gl_tag" : '^GE-Proton[0-9][0-9]*-[0-9][0-9]*$' > /dev/null || return 1
+    printf '%s\n' "$_gl_tag"
+}
+
+resolve_ge_asset() {
+    _ra_tag=$1
+    mkdir -p "$CACHE_DIR" 2> /dev/null || return 1
+    for _ra_name in "$_ra_tag-x86_64" "$_ra_tag"; do
+        _ra_file="$CACHE_DIR/$_ra_name.sha512sum"
+        rm -f "$_ra_file"
+        http -Lsf --max-time 15 -o "$_ra_file" "$PROTON_GE_URL/$_ra_tag/$_ra_name.sha512sum" 2> /dev/null || continue
+        _ra_sha=''
+        _ra_file_name=''
+        read -r _ra_sha _ra_file_name < "$_ra_file" || :
+        rm -f "$_ra_file"
+        _ra_file_name=${_ra_file_name#\*}
+        [ "$_ra_file_name" = "$_ra_name.tar.gz" ] || continue
+        expr "$_ra_sha" : '^[0-9a-f]\{128\}$' > /dev/null || continue
+        printf '%s %s\n' "$_ra_name.tar.gz" "$_ra_sha"
+        return 0
+    done
+    return 1
+}
+
+ge_unavailable() {
+    if [ -n "$2" ]; then
+        fatal_error "$1${NL}This game's prefix was made with $2, so it can't be moved to UMU-Proton. Try again when the connection is back." "GE-Proton"
+    fi
+    if [ "$ARGS_GIVEN" -eq 1 ]; then
+        fatal_error "$1${NL}Run again with --umu-proton to install with UMU-Proton instead." "GE-Proton"
+    fi
+    ask_continue "GE-Proton isn't available" "$1${NL}Continue to install this game with UMU-Proton instead? Cancel stops here and nothing is created." || {
+        log_error "Cancelled: no GE-Proton."
+        exit 1
+    }
+    log_warning "Going on with UMU-Proton: this game won't use GE-Proton."
+}
+
 download_pinned_proton() {
     _dp_tag=$1
     _dp_asset=$2
@@ -1304,37 +1366,37 @@ download_pinned_proton() {
     _dp_file="$CACHE_DIR/$_dp_asset"
 
     if ! command -v tar > /dev/null; then
-        log_warning "Pinned Proton: tar was not found on this system"
+        log_warning "GE-Proton: tar was not found on this system"
         return 1
     fi
-    if ! mkdir -p "$PROTON_COMPAT_DIR"; then
-        log_warning "Pinned Proton: couldn't create $PROTON_COMPAT_DIR"
+    if ! mkdir -p "$PROTON_COMPAT_DIR" "$CACHE_DIR"; then
+        log_warning "GE-Proton: couldn't create $PROTON_COMPAT_DIR"
         return 1
     fi
 
-    log_info "Pinned Proton: downloading $_dp_asset (only needed the first time)..."
+    log_info "GE-Proton: downloading $_dp_asset (only needed the first time)..."
     rm -f "$_dp_file"
     # --fail so an error page isn't saved; the speed limit gives up on a stalled connection (no overall time limit)
     if ! http -L --fail --progress-bar --connect-timeout 15 --speed-limit 1024 --speed-time 60 -o "$_dp_file" "$PROTON_GE_URL/$_dp_tag/$_dp_asset"; then
         rm -f "$_dp_file"
-        log_warning "Pinned Proton: couldn't download $PROTON_GE_URL/$_dp_tag/$_dp_asset"
+        log_warning "GE-Proton: couldn't download $PROTON_GE_URL/$_dp_tag/$_dp_asset"
         return 1
     fi
     if [ "$(get_sha512 "$_dp_file")" != "$_dp_sha" ]; then
         rm -f "$_dp_file"
-        log_warning "Pinned Proton: $_dp_asset doesn't match the checksum in the game fixes file, not using it"
+        log_warning "GE-Proton: $_dp_asset doesn't match its expected checksum, not using it"
         return 1
     fi
 
-    log_info "Pinned Proton: checksum OK, unpacking..."
+    log_info "GE-Proton: checksum OK, unpacking..."
     _dp_tmp=$(mktemp -d "$PROTON_COMPAT_DIR/.zoom-unpack.XXXXXX") || {
         rm -f "$_dp_file"
-        log_warning "Pinned Proton: couldn't create a folder in $PROTON_COMPAT_DIR"
+        log_warning "GE-Proton: couldn't create a folder in $PROTON_COMPAT_DIR"
         return 1
     }
     if ! tar -xzf "$_dp_file" -C "$_dp_tmp" || [ ! -f "$_dp_tmp/$_dp_name/toolmanifest.vdf" ]; then
         rm -rf "$_dp_tmp" "$_dp_file"
-        log_warning "Pinned Proton: couldn't unpack $_dp_asset"
+        log_warning "GE-Proton: couldn't unpack $_dp_asset"
         return 1
     fi
     rm -f "$_dp_file"
@@ -1348,7 +1410,7 @@ download_pinned_proton() {
     fi
     rm -rf "$_dp_tmp"
     if [ ! -f "$_dp_dir/toolmanifest.vdf" ]; then
-        log_warning "Pinned Proton: couldn't move $_dp_name into $PROTON_COMPAT_DIR"
+        log_warning "GE-Proton: couldn't move $_dp_name into $PROTON_COMPAT_DIR"
         return 1
     fi
     return 0
@@ -1357,40 +1419,88 @@ download_pinned_proton() {
 ensure_pinned_proton() {
     ZOOM_PROTONPATH=''
     _pp_marker="$INSTALL_PATH/drive_c/zoom_proton"
-    _pp_name=''
-    _pp_sha=''
-
-    if [ -n "$GAME_FIXES_PROTON" ]; then
-        _pp_name=${GAME_FIXES_PROTON_ASSET%.tar.gz}
-        _pp_sha=$GAME_FIXES_PROTON_SHA512
-    elif [ -f "$_pp_marker" ]; then
-        read -r _pp_name _pp_sha < "$_pp_marker"
-        # The name ends up in a path; expr without an optional group (it exits 1 when the group matches nothing)
-        _pp_base=${_pp_name%-x86_64}
-        if ! expr "$_pp_base" : '^GE-Proton[0-9][0-9]*-[0-9][0-9]*$' > /dev/null; then
-            _pp_name=''
-        fi
+    _pp_umu_prefix=0
+    read_proton_marker "$INSTALL_PATH" || :
+    _pp_have=$PM_NAME
+    _pp_have_sha=$PM_SHA
+    if [ -z "$_pp_have" ] && is_valid_prefix "$INSTALL_PATH"; then
+        _pp_umu_prefix=1
     fi
-    [ -n "$_pp_name" ] || return 0
+
+    if [ "$OPT_UMU_PROTON" -eq 1 ]; then
+        if [ -n "$_pp_have" ]; then
+            fatal_error "This game's prefix was made with $_pp_have, so it can't go back to UMU-Proton (the game would break). Leave out --umu-proton, or install into a new folder." "GE-Proton"
+        fi
+        [ -z "$GAME_FIXES_PROTON" ] || log_warning "This game was tested on $GAME_FIXES_PROTON, not UMU-Proton."
+        log_info "UMU-Proton: as asked with --umu-proton"
+        return 0
+    fi
+
+    if [ -n "$OPT_GE_PROTON" ] && [ -n "$_pp_have" ]; then
+        if [ "$OPT_GE_PROTON" != "${_pp_have%-x86_64}" ]; then
+            fatal_error "This game's prefix was made with $_pp_have, and this script can't move it to $OPT_GE_PROTON. Install into a new folder to use another version." "GE-Proton"
+        fi
+        OPT_GE_PROTON=''
+    fi
+
+    _pp_tag=''
+    _pp_asset=''
+    _pp_sha=''
+    if [ -n "$OPT_GE_PROTON" ]; then
+        if [ $_pp_umu_prefix -eq 1 ]; then
+            fatal_error "This game's prefix was made with UMU-Proton, and moving it to $OPT_GE_PROTON would break the launchers it already has. Install into a new folder to use GE-Proton." "GE-Proton"
+        fi
+        if [ -n "$GAME_FIXES_PROTON" ] && [ "$GAME_FIXES_PROTON" != "$OPT_GE_PROTON" ]; then
+            log_warning "This game was tested on $GAME_FIXES_PROTON, not $OPT_GE_PROTON."
+        fi
+        _pp_tag=$OPT_GE_PROTON
+        log_info "GE-Proton: $_pp_tag, as asked with --ge-proton"
+    elif [ $_pp_umu_prefix -eq 1 ]; then
+        log_info "UMU-Proton: this prefix was made with it, so it stays on it"
+        return 0
+    elif [ -n "$_pp_have" ]; then
+        _pp_tag=${_pp_have%-x86_64}
+        _pp_asset=$_pp_have.tar.gz
+        _pp_sha=$_pp_have_sha
+        if [ -n "$GAME_FIXES_PROTON" ] && [ "$GAME_FIXES_PROTON_ASSET" != "$_pp_asset" ]; then
+            log_info "GE-Proton: this prefix was made with $_pp_have, so it keeps it"
+        fi
+    elif [ -n "$GAME_FIXES_PROTON" ]; then
+        _pp_tag=$GAME_FIXES_PROTON
+        _pp_asset=$GAME_FIXES_PROTON_ASSET
+        _pp_sha=$GAME_FIXES_PROTON_SHA512
+        log_info "GE-Proton: $_pp_tag, the version this game was tested on"
+    else
+        if ! _pp_tag=$(resolve_ge_latest); then
+            ge_unavailable "Couldn't find out the latest GE-Proton version (is GitHub reachable?)." "$_pp_have"
+            return 0
+        fi
+        log_info "GE-Proton: $_pp_tag, the latest release"
+    fi
 
     # The path goes into launch scripts and the Flatpak, which can't carry spaces or shell chars
     case $PROTON_COMPAT_DIR in
         *[!A-Za-z0-9._/+-]*)
-            log_warning "Pinned Proton: $PROTON_COMPAT_DIR has characters that can't be used, going on with umu's own Proton"
+            ge_unavailable "$PROTON_COMPAT_DIR has characters that GE-Proton can't be used from." "$_pp_have"
             return 0
             ;;
     esac
 
-    _pp_path="$PROTON_COMPAT_DIR/$_pp_name"
-    if [ -f "$_pp_path/toolmanifest.vdf" ]; then
-        log_info "Pinned Proton: $_pp_name is already installed"
-    elif [ -n "$GAME_FIXES_PROTON" ]; then
-        if ! download_pinned_proton "$GAME_FIXES_PROTON" "$GAME_FIXES_PROTON_ASSET" "$GAME_FIXES_PROTON_SHA512"; then
-            log_warning "Pinned Proton: going on with umu's own Proton"
+    if [ -z "$_pp_asset" ] || { ! expr "$_pp_sha" : '^[0-9a-f]\{128\}$' > /dev/null && [ ! -f "$PROTON_COMPAT_DIR/${_pp_asset%.tar.gz}/toolmanifest.vdf" ]; }; then
+        if ! _pp_res=$(resolve_ge_asset "$_pp_tag"); then
+            ge_unavailable "Couldn't get the checksum of $_pp_tag (is GitHub reachable, and does that version exist?)." "$_pp_have"
             return 0
         fi
-    else
-        log_warning "Pinned Proton: this prefix was made with $_pp_name, which isn't installed any more. Going on with umu's own Proton"
+        _pp_asset=${_pp_res% *}
+        _pp_sha=${_pp_res#* }
+    fi
+
+    _pp_name=${_pp_asset%.tar.gz}
+    _pp_path="$PROTON_COMPAT_DIR/$_pp_name"
+    if [ -f "$_pp_path/toolmanifest.vdf" ]; then
+        log_info "GE-Proton: $_pp_name is already installed"
+    elif ! download_pinned_proton "$_pp_tag" "$_pp_asset" "$_pp_sha"; then
+        ge_unavailable "Couldn't download $_pp_name." "$_pp_have"
         return 0
     fi
 
@@ -1398,7 +1508,7 @@ ensure_pinned_proton() {
     export PROTONPATH="$ZOOM_PROTONPATH"
     mkdir -p "$INSTALL_PATH/drive_c"
     printf '%s %s\n' "$_pp_name" "$_pp_sha" > "$_pp_marker"
-    log_info "Pinned Proton: this game runs on $_pp_name"
+    log_info "GE-Proton: this game runs on $_pp_name"
 }
 
 # Same text in uninstall.sh: keep them equal.
@@ -1453,25 +1563,27 @@ find_unused_protons() {
 
 pinned_proton_launch_lines() {
     [ -n "$ZOOM_PROTONPATH" ] || return 0
-    _pl_msg=$(quote_sq "${ZOOM_PROTONPATH##*/} (pinned for $GAME_NAME_SAFE) was removed, so the default Proton is used. Reinstall the game (it needs internet) to get it back.")
-    _pl_title=$(quote_sq "$GAME_NAME_SAFE")
-    _pl_ver=${ZOOM_PROTONPATH##*/}
-    _pl_note=$(quote_sq "${_pl_ver%-x86_64} removed. Reinstall the game.")
-    # Notifiers in order: notify-send, gdbus, dbus-send, kdialog, zenity (Pop!_OS has no notify-send); GNOME shows ~40 characters, so a short text
-    printf '%s\n' \
-        "if [ -f '$ZOOM_PROTONPATH/toolmanifest.vdf' ]; then" \
-        "    export PROTONPATH='$ZOOM_PROTONPATH'" \
-        "else" \
-        "    msg='$_pl_msg'" \
-        "    title='$_pl_title'" \
-        "    note='$_pl_note'" \
-        "    printf '%s\\n' \"\$msg\" >&2" \
-        "    { command -v notify-send > /dev/null 2>&1 && notify-send \"\$title\" \"\$note\" > /dev/null 2>&1; } ||" \
-        "    { command -v gdbus > /dev/null 2>&1 && gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.freedesktop.Notifications.Notify zoom-platform 0 '' \"\$title\" \"\$note\" '[]' '{}' 15000 > /dev/null 2>&1; } ||" \
-        "    { command -v dbus-send > /dev/null 2>&1 && dbus-send --session --dest=org.freedesktop.Notifications --type=method_call /org/freedesktop/Notifications org.freedesktop.Notifications.Notify string:zoom-platform uint32:0 string: \"string:\$title\" \"string:\$note\" array:string: dict:string:string: int32:15000 > /dev/null 2>&1; } ||" \
-        "    { command -v kdialog > /dev/null 2>&1 && kdialog --title \"\$title\" --passivepopup \"\$note\" 15 > /dev/null 2>&1; } ||" \
-        "    { command -v zenity > /dev/null 2>&1 && zenity --warning --title=\"\$title\" --no-wrap --timeout=20 --text=\"\$(printf '%s' \"\$msg\" | fold -s -w 70)\" > /dev/null 2>&1 & }" \
-        "fi"
+    printf "_zp_dir='%s'\n" "$(quote_sq "${ZOOM_PROTONPATH%/*}")"
+    printf "_zp_want='%s'\n" "$(quote_sq "${ZOOM_PROTONPATH##*/}")"
+    printf "_zp_game='%s'\n" "$(quote_sq "$GAME_NAME_SAFE")"
+    # Notifiers in order: notify-send, gdbus, dbus-send, kdialog, zenity (Pop!_OS has no notify-send);
+    # GNOME shows ~40 characters, so $2 is a short text and only zenity shows $3
+    cat <<'EOL'
+zp_notify() {
+    printf '%s\n' "$3" >&2
+    { command -v notify-send > /dev/null 2>&1 && notify-send "$1" "$2" > /dev/null 2>&1; } ||
+    { command -v gdbus > /dev/null 2>&1 && gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.freedesktop.Notifications.Notify zoom-platform 0 '' "$1" "$2" '[]' '{}' 15000 > /dev/null 2>&1; } ||
+    { command -v dbus-send > /dev/null 2>&1 && dbus-send --session --dest=org.freedesktop.Notifications --type=method_call /org/freedesktop/Notifications org.freedesktop.Notifications.Notify string:zoom-platform uint32:0 string: "string:$1" "string:$2" array:string: dict:string:string: int32:15000 > /dev/null 2>&1; } ||
+    { command -v kdialog > /dev/null 2>&1 && kdialog --title "$1" --passivepopup "$2" 15 > /dev/null 2>&1; } ||
+    { command -v zenity > /dev/null 2>&1 && zenity --warning --title="$1" --no-wrap --timeout=20 --text="$(printf '%s' "$3" | fold -s -w 70)" > /dev/null 2>&1 & }
+}
+if [ -f "$_zp_dir/$_zp_want/toolmanifest.vdf" ]; then
+    export PROTONPATH="$_zp_dir/$_zp_want"
+else
+    zp_notify "$_zp_game" "${_zp_want%-x86_64} removed, can't start." "$_zp_want (needed by $_zp_game) was removed, so the game can't start. To get it back (needs internet, nothing else is reinstalled) run: curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- --restore-proton \"$WINEPREFIX\""
+    exit 1
+fi
+EOL
 }
 
 # Args: name (file), menu name, workdir, exe (Windows paths, backslashes doubled: they sit between double quotes), args (unquoted),
@@ -1989,6 +2101,13 @@ Options:
                        Remove the GE-Proton versions this script downloaded that no
                        installed game uses any more, then exit. Asks first.
   -y, --yes            With --remove-unused-proton: do not ask, just remove them.
+      --ge-proton VERSION
+                       Install with this GE-Proton version (like GE-Proton11-7)
+                       instead of the latest one.
+      --umu-proton     Install with UMU-Proton instead of GE-Proton.
+      --restore-proton DEST
+                       Download again the GE-Proton version the game in DEST runs
+                       on, if it was deleted. Installs nothing else.
 
 Arguments:
   INSTALLER            Path to a ZOOM Platform installer .exe.
@@ -1998,6 +2117,8 @@ Examples:
   zoom-platform-darth.sh "Game-English-Setup-1.33.7.exe" ~/Games/new_game_dir
   zoom-platform-darth.sh -i "Game-English-Setup-1.33.7.exe" -d ~/Games/new_game_dir
   zoom-platform-darth.sh --guid "Game-English-Setup-1.33.7.exe"
+  zoom-platform-darth.sh --ge-proton GE-Proton11-7 "Game-English-Setup-1.33.7.exe" ~/Games/new_game_dir
+  zoom-platform-darth.sh --restore-proton ~/Games/new_game_dir
   zoom-platform-darth.sh --remove-unused-proton
   zoom-platform-darth.sh --remove-unused-proton --yes
 
@@ -2019,7 +2140,7 @@ GUID_INSTALLER=""
 REMOVE_UNUSED_PROTON=0
 ASSUME_YES=0
 
-options=$(getopt -o hvi:d:o:g:y --long help,version,installer:,dest:,output:,guid:,remove-unused-proton,yes -n 'zoom-platform-darth.sh' -- "$@")
+options=$(getopt -o hvi:d:o:g:y --long help,version,installer:,dest:,output:,guid:,remove-unused-proton,yes,ge-proton:,umu-proton,restore-proton: -n 'zoom-platform-darth.sh' -- "$@")
 
 eval set -- "$options"
 
@@ -2053,6 +2174,18 @@ while true; do
         ASSUME_YES=1
         shift
         ;;
+    --ge-proton )
+        OPT_GE_PROTON=${2%-x86_64}
+        shift 2
+        ;;
+    --umu-proton )
+        OPT_UMU_PROTON=1
+        shift
+        ;;
+    --restore-proton )
+        RESTORE_PROTON="$2"
+        shift 2
+        ;;
     --) shift; break ;;
     *)
         fatal_error "Invalid option: $1"
@@ -2063,6 +2196,48 @@ done
 [ -z "$INPUT_INSTALLER" ] && INPUT_INSTALLER=$1
 
 [ -z "$INSTALL_PATH" ] && INSTALL_PATH=$2
+
+if [ -n "$INPUT_INSTALLER" ] || [ -n "$INSTALL_PATH" ] || [ -n "$OPT_GE_PROTON" ]; then
+    ARGS_GIVEN=1
+fi
+
+if [ -n "$OPT_GE_PROTON" ] && ! expr "$OPT_GE_PROTON" : '^GE-Proton[0-9][0-9]*-[0-9][0-9]*$' > /dev/null; then
+    log_error "--ge-proton needs a version like GE-Proton11-7."
+    exit 2
+fi
+if [ -n "$OPT_GE_PROTON" ] && [ "$OPT_UMU_PROTON" -eq 1 ]; then
+    log_error "--ge-proton and --umu-proton can't be used together."
+    exit 2
+fi
+
+if [ -n "$RESTORE_PROTON" ]; then
+    if ! read_proton_marker "$RESTORE_PROTON"; then
+        log_error "No GE-Proton version is recorded in \"$RESTORE_PROTON\": it isn't a game installed by this script, or it runs on UMU-Proton."
+        exit 1
+    fi
+    _rs_name=$PM_NAME
+    _rs_sha=$PM_SHA
+    if [ -f "$PROTON_COMPAT_DIR/$_rs_name/toolmanifest.vdf" ]; then
+        log_info "GE-Proton: $_rs_name is already installed, nothing to restore."
+        exit 0
+    fi
+    _rs_asset=$_rs_name.tar.gz
+    if ! expr "$_rs_sha" : '^[0-9a-f]\{128\}$' > /dev/null; then
+        if ! _rs_res=$(resolve_ge_asset "${_rs_name%-x86_64}"); then
+            log_error "Couldn't get the checksum of $_rs_name (is GitHub reachable?)."
+            exit 1
+        fi
+        _rs_asset=${_rs_res% *}
+        _rs_sha=${_rs_res#* }
+    fi
+    if ! download_pinned_proton "${_rs_name%-x86_64}" "$_rs_asset" "$_rs_sha"; then
+        log_error "Couldn't restore $_rs_name."
+        exit 1
+    fi
+    printf '%s %s\n' "${_rs_asset%.tar.gz}" "$_rs_sha" > "$RESTORE_PROTON/drive_c/zoom_proton"
+    log_info "GE-Proton: restored ${_rs_asset%.tar.gz}"
+    exit 0
+fi
 
 if [ "$REMOVE_UNUSED_PROTON" -eq 1 ]; then
     _rp_list=$(find_unused_protons '')
