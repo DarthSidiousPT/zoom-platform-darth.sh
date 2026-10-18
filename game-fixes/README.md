@@ -3,7 +3,7 @@
 A game fix is a small text file that changes how one game is installed. It can do things like:
 
 - **Replace a ZOOM shortcut** that doesn't work under Proton with launchers that do (Necro Vision's launcher menu is one).
-- **Run the game on** one specific, tested version of **GE-Proton** instead of umu's default Proton (Kaan needs this for its videos).
+- **Run the game on** one specific, tested version of **GE-Proton** instead of the latest one (new installs use the latest GE-Proton by default).
 - **Set values in the game's Windows registry** (e-Racer uses one, or its picture is almost black).
 - **Copy files from a zip into the game's folder** (e-Racer gets a small `ddraw.dll` that keeps it at 60 frames per second, alongside a gamepad layer with a stick deadzone).
 
@@ -181,7 +181,7 @@ Install the game again with `ZOOM_GAME_FIXES_FILE` set, and look in the output f
 
 ### When you need it
 
-The game installs and starts, but something is wrong that umu's default Proton doesn't handle. [Kaan](https://www.zoom-platform.com/product/kaan-barbarians-blade)'s intro and cutscenes shows coloured bars, for example. If the same game works on GE-Proton, a fix file can tell the script to use that exact GE-Proton version.
+New installs run on the latest GE-Proton. If the game installs and starts but something is wrong on it, and it works on an older GE-Proton version, a fix file can tell the script to use that exact version instead.
 
 The three values you will need:
 
@@ -251,10 +251,11 @@ The three values you will need:
 6. Test the whole thing. Delete the build you unpacked in step 2, so the script has to download it, then install the game once more, into another new folder, with `ZOOM_GAME_FIXES_FILE` set. The output should include:
 
    ```
-   Game fixes: this game is pinned to GE-Proton11-7
-   Pinned Proton: downloading GE-Proton11-7-x86_64.tar.gz (only needed the first time)...
-   Pinned Proton: checksum OK, unpacking...
-   Pinned Proton: this game runs on GE-Proton11-7-x86_64
+   Game fixes: this game was tested on GE-Proton11-7
+   GE-Proton: GE-Proton11-7, the version this game was tested on
+   GE-Proton: downloading GE-Proton11-7-x86_64.tar.gz (only needed the first time)...
+   GE-Proton: checksum OK, unpacking...
+   GE-Proton: this game runs on GE-Proton11-7-x86_64
    ```
 
    Then start the game from the menu.
@@ -269,11 +270,12 @@ The three values you will need:
   DLC or a reinstall stays on the same build even when the DLC has no file of its own.
 - When the script downloads the build, it leaves a small file called `.zoom-platform-downloaded` inside the folder. A folder that was
   already there (from ProtonUp-Qt, for example) gets none.
-- If the build can't be had (offline, wrong checksum), the install goes on with umu's own Proton and says so.
+- If the build can't be had (offline, wrong checksum), a new install stops when it was started with arguments (`-i`, `-d`), and asks whether to go on with UMU-Proton when it was started without any. A game that already has a build recorded always stops.
+- The keys only matter for a new install. A game that is already installed keeps the Proton it was made with, and the fix file is ignored for it.
 
 ### What happens when you start the game
 
-Starting the game works without internet. The launch script only checks that the GE-Proton folder is still there. Tools like [ProtonUp-Qt](https://davidotek.github.io/protonup-qt/) and [ProtonPlus](https://github.com/Vysp3r/protonplus) can delete that folder without knowing a game uses it. If it's gone, the game starts on umu's own Proton instead, and the script tells you, in the terminal and in a desktop notification ("GE-Proton11-7 removed. Reinstall the game."). Reinstalling the game brings the folder back, and that one does need internet.
+Starting the game works without internet. The launch script only checks that the GE-Proton folder is still there. Tools like [ProtonUp-Qt](https://davidotek.github.io/protonup-qt/) and [ProtonPlus](https://github.com/Vysp3r/protonplus) can delete that folder without knowing a game uses it. If it's gone, the game doesn't start, because another Proton could break its prefix. The script says so in a desktop notification that includes the command to get the build back: `zoom-platform-darth.sh --restore-proton "<install folder>"` (it needs internet and reinstalls nothing else).
 
 Which tool shows the notification depends on the distro: `notify-send`, `gdbus`, `dbus-send`, `kdialog` or `zenity`, the first one that works. Uninstalling can remove the build, see below.
 
@@ -306,8 +308,8 @@ A game whose launcher points to a drive that isn't mounted stops all removals, b
 | `ignoring "proton": proton must look like GE-Proton11-7`                        | The tag has the wrong shape.                                                                 |
 | `ignoring "proton": proton_asset must be the proton value followed by ...`      | The asset name doesn't match the tag.                                                        |
 | `ignoring "proton": proton_sha512 must be 128 lowercase hex characters`         | The checksum was cut short, has a typo, or is in capitals.                                   |
-| `Pinned Proton: couldn't download ...`                                          | No network, or the tag or asset name doesn't exist on GitHub.                                |
-| `Pinned Proton: ... doesn't match the checksum in the game fixes file`          | The file on GitHub isn't the one the checksum was made from.                                 |
+| `GE-Proton: couldn't download ...`                                              | No network, or the tag or asset name doesn't exist on GitHub.                                |
+| `GE-Proton: ... doesn't match its expected checksum, not using it`              | The file on GitHub isn't the one the checksum was made from.                                 |
 | `ignoring "<registry path>": the key ... is not allowed`                        | The path goes through a key that a fix file can't write. See [Part 3](#part-3-registry-values). |
 | `ignoring "<registry path>": the path must start with HKCU\ or HKLM\`           | The path has the wrong shape. It must be `<root>\Software\<key>\<value name>`.               |
 | `ignoring "<registry path>": a dword must be a number ...`                      | The part after `=` is wrong: a `dword` takes digits only, and the type is `dword` or `sz`.   |
