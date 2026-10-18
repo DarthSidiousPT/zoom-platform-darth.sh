@@ -25,7 +25,7 @@
 | <img src="https://api.iconify.design/ph/folder-plus-duotone.svg?color=%232f81f7&height=28" height="28" alt="">     | Installing into a new folder              | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=20" height="20" align="absmiddle" alt="Works"> Works                          | <img src="https://api.iconify.design/ph/warning-circle-fill.svg?color=%23d4a72c&height=20" height="20" align="absmiddle" alt="Partial"> Can wrongly refuse a folder that doesn't exist yet |
 | <img src="https://api.iconify.design/ph/files-duotone.svg?color=%232f81f7&height=28" height="28" alt="">           | Game split into several .bin files        | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=20" height="20" align="absmiddle" alt="Works"> Checks the parts first, names a renamed one | <img src="https://api.iconify.design/ph/warning-circle-fill.svg?color=%23d4a72c&height=20" height="20" align="absmiddle" alt="Partial"> No check of its own, only Setup's prompt for a missing part |
 | <img src="https://api.iconify.design/ph/wrench-duotone.svg?color=%232f81f7&height=28" height="28" alt="">          | Games whose own launcher fails            | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=20" height="20" align="absmiddle" alt="Works"> [Fixed launchers for some games](game-fixes/GAMES.md) | <img src="https://api.iconify.design/ph/x-circle-fill.svg?color=%23cf222e&height=20" height="20" align="absmiddle" alt="Fails"> No game fixes, only the game's own shortcut               |
-| <img src="https://api.iconify.design/ph/gear-six-duotone.svg?color=%232f81f7&height=28" height="28" alt=""> | Games that need a different Proton | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=20" height="20" align="absmiddle" alt="Works"> [A specific GE-Proton version for some games](game-fixes/GAMES.md) | <img src="https://api.iconify.design/ph/warning-circle-fill.svg?color=%23d4a72c&height=20" height="20" align="absmiddle" alt="Partial"> Always umu's default Proton |
+| <img src="https://api.iconify.design/ph/gear-six-duotone.svg?color=%232f81f7&height=28" height="28" alt=""> | Games that need a different Proton | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=20" height="20" align="absmiddle" alt="Works"> [Latest GE-Proton by default](#ge-proton-by-default) | <img src="https://api.iconify.design/ph/warning-circle-fill.svg?color=%23d4a72c&height=20" height="20" align="absmiddle" alt="Partial"> Always umu's default Proton |
 | <img src="https://api.iconify.design/ph/clock-counter-clockwise-duotone.svg?color=%232f81f7&height=28" height="28" alt=""> | Older installers with no game ID | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=20" height="20" align="absmiddle" alt="Works"> [Looks the game up in a short list](game-fixes/README.md#games-with-no-zoom-game-id) | <img src="https://api.iconify.design/ph/x-circle-fill.svg?color=%23cf222e&height=20" height="20" align="absmiddle" alt="Fails"> Refuses them as "not a ZOOM Platform installer" |
 | <img src="https://api.iconify.design/ph/trash-duotone.svg?color=%232f81f7&height=28" height="28" alt="">           | Uninstall                                 | <img src="https://api.iconify.design/ph/check-circle-fill.svg?color=%232da44e&height=20" height="20" align="absmiddle" alt="Works"> Previews what it'll remove, reports the result, asks about removing a GE-Proton version no other game uses | <img src="https://api.iconify.design/ph/x-circle-fill.svg?color=%23cf222e&height=20" height="20" align="absmiddle" alt="Fails"> Leaves Desktop links and launch scripts, no output           |
 
@@ -35,9 +35,9 @@
 
 Some big games (such as Necro Vision) come as one `.exe` plus `-1.bin`, `-2.bin`, ... files. Normally you'd download all of them into the same folder, keep their names, and choose the `.exe`. Before installing, the script checks that every part is there and complete. If your browser renamed one (`-1 (1).bin`), it tells you which file to rename. A part that's missing entirely, or that looks cut short, is a warning you can choose to continue past - for a missing part, Setup's own installer will ask you to browse to wherever it actually is (another folder, disc or drive) once it reaches that part, so the parts don't all have to sit together if you'd rather feed them in one at a time.
 
-### Games that need a specific Proton
+### GE-Proton by default
 
-A few games only work properly on a certain GE-Proton version (Kaan's videos show colour bars on umu's default one, for example). For those, the game's fix file names the version. The script downloads it once while installing (checked against a checksum) and uses it for that game. After that the game starts offline. If the GE-Proton folder ever gets deleted, the game falls back to the default Proton and shows a notification. Games without a fix file are untouched. See [which games have one](game-fixes/GAMES.md).
+New installs run on the latest GE-Proton instead of umu's default Proton. The script downloads it once while installing (checked against a checksum), and after that the game starts offline. A game keeps the Proton it was installed with, and the script never changes it later. To choose a version yourself, use `--ge-proton GE-Proton11-7`, or `--umu-proton` for UMU-Proton. A game's fix file can also name the version it was tested on. If the GE-Proton folder gets deleted, the game doesn't start, and a notification gives the command to download it again: `zoom-platform-darth.sh --restore-proton ~/Games/MyGame`. If GE-Proton can't be downloaded, an install started with options stops, and one started without options asks if you want to continue with UMU-Proton.
 
 ### Finding a game's ID
 
@@ -118,6 +118,9 @@ These are the options of `zoom-platform-darth.sh`. With the curl one-liner, add 
 | `-i FILE`, `--installer FILE` | The ZOOM installer `.exe` to install. |
 | `-d FOLDER`, `--dest FOLDER`, `-o FOLDER`, `--output FOLDER` | Where to install the game. To update a game or add a DLC, use the folder of the base game. |
 | `-g FILE`, `--guid FILE` | Prints the game's ID and installs nothing. |
+| `--ge-proton VERSION` | Installs with this GE-Proton version (like `GE-Proton11-7`) instead of the latest one. |
+| `--umu-proton` | Installs with UMU-Proton instead of GE-Proton. |
+| `--restore-proton FOLDER` | Downloads again the GE-Proton version the game in FOLDER runs on, if it was deleted. Installs nothing else. |
 | `--remove-unused-proton` | Lists the GE-Proton versions this script downloaded that no game uses, and removes them after asking. |
 | `-y`, `--yes` | With `--remove-unused-proton`, does not ask. Works without a terminal. |
 | `-v`, `--version` | Prints the script's version. |
@@ -152,6 +155,18 @@ With `--yes` it doesn't ask, which also works without a terminal:
 ```
 curl -L darthsidiouspt.github.io/zoom-platform-darth.sh/i | sh -s -- --remove-unused-proton --yes
 ```
+
+### Running an older version
+
+If the newest version gives you trouble, you can run an older version. Every release has its own download link with the release tag. Tags look like `v1.5.2-darth`, and the [releases page](https://github.com/DarthSidiousPT/zoom-platform-darth.sh/releases) lists all:
+```
+curl -L https://github.com/DarthSidiousPT/zoom-platform-darth.sh/releases/download/v1.5.2-darth/zoom-platform-darth.sh | sh
+```
+Options go after `sh -s --`, the same as with the normal link:
+```
+curl -L https://github.com/DarthSidiousPT/zoom-platform-darth.sh/releases/download/v1.5.2-darth/zoom-platform-darth.sh | sh -s -- -i "Game-English-Setup-1.33.7.exe" -d ~/Games/MyGame
+```
+**This only works for releases**, not for single commits!
 
 ## Contributing
 
