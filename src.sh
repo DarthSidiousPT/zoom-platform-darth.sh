@@ -706,6 +706,13 @@ is_desktop_from_this_run() {
     [ -n "$(find "$1" -newer "$_fr_marker" 2> /dev/null)" ]
 }
 
+# Killing the installer can cut winemenubuilder off in the middle of an icon and leave a 0-byte PNG
+desktop_icon_is_empty() {
+    _di_name=$(get_desktop_value "Icon" "$1")
+    [ -n "$_di_name" ] || return 1
+    [ -n "$(find "$PROTON_SHORTCUTS_PATH/icons" -type f -name "*$_di_name.png" -size 0 2> /dev/null)" ]
+}
+
 get_lnk_name() {
     _gl_name=${1##*\\}
     printf '%s' "${_gl_name%.[lL][nN][kK]}"
@@ -749,8 +756,10 @@ ensure_proton_shortcuts() {
         _sc_desktop="$PROTON_SHORTCUTS_PATH/$_sc_name.desktop"
         if is_desktop_from_this_run "$_sc_desktop"; then
             is_skipped_shortcut "$(get_desktop_value "StartupWMClass" "$_sc_desktop")" "$_sc_name" && continue
-            SHORTCUTS_KEPT=$((SHORTCUTS_KEPT+1))
-            continue
+            if ! desktop_icon_is_empty "$_sc_desktop"; then
+                SHORTCUTS_KEPT=$((SHORTCUTS_KEPT+1))
+                continue
+            fi
         fi
 
         # No .desktop: read the .lnk to skip the uninstaller and manuals without launching umu; if the case differs, ask wine
